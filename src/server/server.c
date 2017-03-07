@@ -16,7 +16,21 @@
 #define GSRV_DEFAULT_PORT "27015"
 
 // Accept this much connections
-#define GSRV_CONNECTIONS_TO_ACCEPT 4
+#define GSRV_CONNECTIONS_TO_ACCEPT 128
+#define GSRV_MAX_CLIENTS 32
+
+// Client Status constnts
+#define GSRV_STATUS_INACTIVE            0
+#define GSRV_STATUS_SENDING_FILE        1
+#define GSRV_STATUS_COMMAND_WAITING     2
+
+
+struct GsrvClientSocket
+{
+    SOCKET cli_sock;
+    FILE* currentFile;
+    char status;
+};
 
 
 int sendFile(SOCKET sock, const char* fname){
@@ -63,42 +77,70 @@ int sendFile(SOCKET sock, const char* fname){
     return 0;
 }
 
+int initSocks(){
+    // Initialize Winsock
+    WSAData wsaData;
+    iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
+    if (iResult != 0) {
+        printf("WSAStartup failed with error: %d\n", iResult);
+        return 1;
+    }
+    return 0;
+}
+
+int performSockCleanup(SOCKET sock, struct addrinfo* addrin, const char* msg, int retval){
+    printf("%s : %d\n", msg, WSAGetLastError());
+    if(addrin)
+        freeaddrinfo(addrin);
+    if(sock != INVALID_SOCKET)
+        closesocket(sock);
+    WSACleanup();
+    return retval;
+}
+
 // Arg: Port number on which we'll listen.
 int runServer(const char* port)
 {
     printf("Init start vars... ");
 
-    WSADATA wsaData;
     int iResult;
 
     SOCKET ListenSocket = INVALID_SOCKET;
-    SOCKET ClientSocket = INVALID_SOCKET;
+    GsrvClientSocket ClientSocket[GSRV_MAX_CLIENTS];
+    
+    fd_set readfds; // The fd_set of the socket descriptors which we will check with SELECT.
+    SOCKET max_fds; // The highest file desctiptor number, needed for SELECT to check. 
+    
+    // Optimize the program work by allocating variable memory on the stack at the beginning of the program.    
+    struct sockaddr_in sin;
+    socklen_t sinlen = sizeof(sin);
 
     struct addrinfo *result = NULL;
     struct addrinfo hints;
 
     int iSendResult;
     char recvbuf[GSRV_DEFAULT_BUFLEN];
-    int recvbuflen = GSRV_DEFAULT_BUFLEN;
-
-    // Initialize Winsock
+    size_t recvbuflen = GSRV_DEFAULT_BUFLEN;
+    
+    // Init WinSocks.
     printf("Done.\nInit WinSock... ");
-
-    iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
-    if (iResult != 0) {
-        printf("WSAStartup failed with error: %d\n", iResult);
+    if(initSocks() != 0)
         return 1;
-    }
-
-    printf("Done.\nInit addrinfo hints...");
-    ZeroMemory(&hints, sizeof(hints));
+    
+    printf("Done.\nInit addrinfo's and SockBuffs ...");
+    
+    // Set the variables
+    memset(ClientSocket, 0, sizeof(ClientSocket)); // Nullify da buffer.
+    memset(&hints, 0, sizeof(hints));
+    
+    // Set the hints for the preferred sockaddr properties.
     hints.ai_family = AF_INET;       // Use IPv4 socket mode.
     hints.ai_socktype = SOCK_STREAM; // Stream mode. (For UDP, we use Datagram)
     hints.ai_protocol = IPPROTO_TCP; // Use TCP for communicating.
     hints.ai_flags = AI_PASSIVE;     // Use it for listening.
 
-    // Resolve the server address and port
-    printf("Done.\nCalling getAddrInfo, with specified port number... ");
+    // Resolve the server address and port with the specified hints.
+    printf("Done.\nCalling getAddrInfo, with specified port number as a service... ");
     iResult = getaddrinfo(NULL, port, &hints, &result);
 
     if ( iResult != 0 ) {
@@ -132,6 +174,7 @@ int runServer(const char* port)
     freeaddrinfo(result);
 
     // Mark the ListenSocket as the socket willing to accept incoming connections.
+    // Max pending connections: SOMAXCONN. This is defined by system.
     printf("Done.\nlisten(ListenSocket)... ");
     iResult = listen(ListenSocket, SOMAXCONN);
     if (iResult == SOCKET_ERROR) {
@@ -143,30 +186,105 @@ int runServer(const char* port)
 
     // Print on which port the socket is listening.
     printf("Done.\nGetSockName()... ");
-    struct sockaddr_in sin;
-    socklen_t len = sizeof(sin);
-    if (getsockname(ListenSocket, (struct sockaddr *)&sin, &len) == -1)
+        if (getsockname(ListenSocket, (struct sockaddr *)&sin, &sinlen) == -1)
         printf("getsockname err. can't get port.\n");
     else
         printf("\nThe server is listening on port: %d\n", ntohs(sin.sin_port));
 
     // Initialize and start accept/receive loop.
+    // Some state vars. Timeout to use in SELECT and how many conns were acceptz0red.
     int connectionsAccepted = 0;
-    
+    int selectErrCount = 0;
+    struct timeval tm;
+
     printf("Done.\n\nStarting Loop... \n");
     while(connectionsAccepted < GSRV_CONNECTIONS_TO_ACCEPT) // Run a server loop.
     {
-        // Extract first request from a connection queue.
-        // Blocks the thread until connection is received.
-        printf("------------\n\nWaiting for the connection.....\n");
-        ClientSocket = accept(ListenSocket, NULL, NULL);
-        if (ClientSocket == INVALID_SOCKET) {
-            printf("accept failed with error: %d\n", WSAGetLastError());
-            closesocket(ListenSocket);
-            WSACleanup();
-            return 1;
-        }
+        // We will use the SELECT function to async'ly check which socks have pending conn's, and perform stuff if they don't.
+        //clear the socket set 
+        FD_ZERO(&readfds);  
+    
+        // Add ListenSocket to set 
+        FD_SET(ListenSocket, &readfds);  
+        max_fds = ListenSocket;
         
+        char haveFileSendingJobs = 0;
+
+        // Now add every of the ClientSockets to the fd_set
+        for(int i=0; i<GSRV_MAX_CLIENTS; i++)
+        {
+            int clsd = ClientSocket[i].cli_sock; 
+
+            if(clsd > 0){ // Valid socket
+                FD_SET(clsd, &readfds); 
+                
+                if(clsd > max_fds) // This desc number is highest. 
+                    max_fds = clsd;
+
+                if(ClientSocket[i].currentFile != NULL)
+                    haveFileSendingJobs = 1;
+            }
+        }
+       
+        // If we have jobs, SELECT timeouts after 1 ms. 
+        tm.tv_sec = 0;
+        tm.tv.usec = 1;
+
+        // Perform SELECT to check the socket state.
+        // We check only the read buffer fd_set, so writefds and exceptfds are NULL.
+        // If we have some active clients to which files are being sent, we timeout after 1 ms to resume the sending work.
+        // If not, we wait until one of the sockets get the data ready in the queue.
+        // Returns total number of ready sockets in fds, or <0 if error.
+
+        int activity = select(0, &readfds, NULL, NULL, (haveFileSendingJobs ? &tm : NULL));
+
+        if(activity < 0){ // Error occured
+            printf("Select error occured: %d\n", WSAGetLastError());
+            if(selectErrCount > 10)
+                break; // If more than 10 consecutive errors occured, break the loop.
+            continue; // If not, try in the next loop;
+        }
+        else if(selectErrCount != 0)
+            selectErrCount = 0; // If no error occured, clear the consecutive error counter.
+
+        
+        // Check if the master ListenSocket is ready to read (has a pending connection).
+        if(FD_ISSET(ListenSocket, &readfds)){
+
+            // Extract first request from a connection queue.
+            // Blocks the thread until connection is received. However, it's not blocked here because we already know a request is pending.
+            int newClient = accept(ListenSocket, (struct sockaddr*)&sin, &sinlen);
+            if(newClient == INVALID_SOCKET){ 
+                printf("accept failed with error: %d\n", WSAGetLastError());
+                break;
+            }
+
+            // Perform new connection start tasks, like application-level handshakes, data receive and stuff.
+
+            // Now add this client socket to the structure.
+            for(int i=0; i < GSRV_MAX_CLIENTS; i++)
+            {
+                if(ClientSocket[i].cli_sock == 0 && ClientSocket[i].status == GSRV_STATUS_INACTIVE){ // Free position, can add!
+                {
+                    ClientSocket[i].cli_sock = newClient;
+                    ClientSocket[i].status = GSRV_STATUS_COMMAND_WAITING;
+                    ClientSocket[i].currentFile = NULL;
+                }
+            }
+            
+        }
+
+        // Now check the remaining client socket descriptors if they are ready to read,
+        // Or if they have other jobs unfinished, do those jobs.
+        for(int i=0; i<GSRV_MAX_CLIENTS; i++)
+        {
+            int clsd = ClientSocket[i].cli_sock;
+            if(FD_ISSET(clsd, &readfds){
+                // Do stuff.
+            }
+        }
+
+        /*
         printf("Connection Received!\nGetting the data...\n");
         // Receive until the peer shuts down the connection
         do {
@@ -200,7 +318,7 @@ int runServer(const char* port)
             return 1;
         }
 
-        connectionsAccepted++;
+        connectionsAccepted++;*/
     }
 
     // cleanup
