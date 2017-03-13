@@ -8,30 +8,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "gsrv.h"
+#include "service.h"
+#include "helperz.h"
+
 // Need to link with Ws2_32.lib
 //#pragma comment (lib, "Ws2_32.lib")
 // #pragma comment (lib, "Mswsock.lib")
-
-#define GSRV_DEFAULT_BUFLEN 512
-#define GSRV_DEFAULT_PORT "27015"
-
-// Accept this much connections
-#define GSRV_CONNECTIONS_TO_ACCEPT 128
-#define GSRV_MAX_CLIENTS 32
-
-// Client Status constnts
-#define GSRV_STATUS_INACTIVE            0
-#define GSRV_STATUS_SENDING_FILE        1
-#define GSRV_STATUS_COMMAND_WAITING     2
-
-
-struct GsrvClientSocket
-{
-    SOCKET cli_sock;
-    FILE* currentFile;
-    char status;
-};
-
 
 int sendFile(SOCKET sock, const char* fname){
     // Try to open file.

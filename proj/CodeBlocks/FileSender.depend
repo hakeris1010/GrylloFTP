@@ -1,0 +1,17 @@
+# depslib dependency file v1.0
+1489411029 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\server\helperz.c
+	"helperz.h"
+	"windows.h"
+	<sys/types.h>
+	<sys/wait.h>
+	<unistd.h>
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+
+1489409422 c:\users\kestutis\documents\codeblocks projects\filesender\src\server\helperz.h
+
+1489411375 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\test\main.c
+	"../server/helperz.h"
+	<stdio.h>
+
