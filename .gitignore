@@ -1,6 +1,5 @@
 # Windows image file caches
 Thumbs.db
-ehthumbs.db
 
 # Folder config file
 Desktop.ini
@@ -16,7 +15,7 @@ $RECYCLE.BIN/
 *.exe
 
 # Windows shortcuts
-*.lnk
+.lnk
 
 # =========================
 # Operating System Files
@@ -48,11 +47,11 @@ Temporary Items
 .apdisk
 
 # Unwanted libs (maybe wanted!)
-#*.a
-#*.lib
+*.a
+*.lib
 
 # Objects
-.o
-.obj
+*.o
+*.obj
 build/obj/
 obj/
