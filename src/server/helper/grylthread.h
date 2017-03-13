@@ -1,5 +1,5 @@
-#ifndef HELPERZ_H_INCLUDED
-#define HELPERZ_H_INCLUDED
+#ifndef GRYLTHREAD_H_INCLUDED
+#define GRYLTHREAD_H_INCLUDED
 
 typedef void *GrThreadHandle;
 
@@ -8,5 +8,4 @@ void joinThread(GrThreadHandle hnd);
 
 void sleep(unsigned int millisecs);
 
-
-#endif
+#endif //GRYLTHREAD_H_INCLUDED

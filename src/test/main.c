@@ -1,4 +1,4 @@
-#include "../server/helperz.h"
+#include "../server/helper/grylthread.h"
 #include <stdio.h>
 
 void doShit(void* paramz0r)
@@ -27,15 +27,16 @@ int main(int argc, char** argv)
 {
     char data1[32] = "\0\0\0\0\0\0\0\0NyaaNyaa :3\0";
     *((int*)data1)     =   1; // Thread Id
-    *((int*)(data1+4)) = 100; // Number of loop iterations.
+    *((int*)(data1+4)) = 10000; // Number of loop iterations.
 
     GrThreadHandle h1 = procToThread(doShit, &data1);
 
     char data2[32] = "\0\0\0\0\0\0\0\0Kawaii~~ :3\0";
     *((int*)data2)     =   2; // Thread Id
-    *((int*)(data2+4)) = 100; // Number of loop iterations.
+    *((int*)(data2+4)) = 10000; // Number of loop iterations.
     GrThreadHandle h2 = procToThread(doShit, &data2);
 
+    //sleep(10000);
     joinThread(h1);
     joinThread(h2);
 

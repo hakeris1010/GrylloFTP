@@ -1,4 +1,4 @@
-#include "helperz.h"
+#include "grylthread.h"
 
 #if defined __WIN32
     #include "windows.h"
@@ -11,6 +11,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define GRYLTHREADMODE_LINUX_FORK     1 // by now only this mode is implemented.
+#define GRYLTHREADMODE_LINUX_PTHREAD  2
 
 // Threading utilities.
 struct ThreadFuncAttribs_Extended

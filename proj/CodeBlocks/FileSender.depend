@@ -11,7 +11,61 @@
 
 1489409422 c:\users\kestutis\documents\codeblocks projects\filesender\src\server\helperz.h
 
-1489411375 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\test\main.c
+1489420346 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\test\main.c
 	"../server/helperz.h"
 	<stdio.h>
+
+1489443275 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\server\service.c
+	"service.h"
+
+1489440537 c:\users\kestutis\documents\codeblocks projects\filesender\src\server\service.h
+	"gsrvsocks.h"
+	<stdio.h>
+	<stdlib.h>
+
+1489080625 c:\users\kestutis\documents\codeblocks projects\filesender\src\server\gsrv.h
+
+1489441180 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\server\gsrvsocks.c
+	"gsrvsocks.h"
+	<stdio.h>
+	<stdlib.h>
+
+1489437176 c:\users\kestutis\documents\codeblocks projects\filesender\src\server\gsrvsocks.h
+	<winsock2.h>
+	<windows.h>
+	<ws2tcpip.h>
+	<unistd.h>
+	<arpa/inet.h>
+	<sys/types.h>
+	<sys/socket.h>
+	<netinet/in.h>
+	<sys/time.h>
+	<errno.h>
+
+1489428168 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\server\helper\grylthread.c
+	"grylthread.h"
+	"windows.h"
+	<sys/types.h>
+	<sys/wait.h>
+	<unistd.h>
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+
+1489428188 c:\users\kestutis\documents\codeblocks projects\filesender\src\server\helper\grylthread.h
+
+1489440175 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\server\helper\hlog.c
+	"hlog.h"
+	<stdarg.h>
+
+1489440127 c:\users\kestutis\documents\codeblocks projects\filesender\src\server\helper\hlog.h
+	<stdio.h>
+	<stdlib.h>
+
+1489443174 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\server\server.c
+	<stdlib.h>
+	<stdio.h>
+	<string.h>
+	"gsrvsocks.h"
+	"service.h"
 

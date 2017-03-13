@@ -32,36 +32,40 @@
 				<Option object_output="../../build/obj/test" />
 				<Option type="1" />
 				<Option compiler="gcc_mingw-w64_compiler_32-bit" />
-				<Option use_console_runner="0" />
 				<Compiler>
 					<Add option="-g" />
 				</Compiler>
 			</Target>
 		</Build>
-		<VirtualTargets>
-			<Add alias="Client" targets="Debug;Release;" />
-			<Add alias="Server" targets="Debug;Release;" />
-			<Add alias="Test" targets="Debug;Release;" />
-		</VirtualTargets>
 		<Compiler>
 			<Add option="-Wall" />
 		</Compiler>
 		<Linker>
 			<Add option="-lWs2_32" />
 		</Linker>
-		<Unit filename="../../src/server/gsrv.h" />
-		<Unit filename="../../src/server/helperz.c">
+		<Unit filename="../../src/server/gsrvsocks.c">
 			<Option compilerVar="CC" />
 		</Unit>
-		<Unit filename="../../src/server/helperz.h" />
+		<Unit filename="../../src/server/gsrvsocks.h" />
+		<Unit filename="../../src/server/helper/grylthread.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="../../src/server/helper/grylthread.h" />
+		<Unit filename="../../src/server/helper/hlog.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="../../src/server/helper/hlog.h" />
 		<Unit filename="../../src/server/server.c">
 			<Option compilerVar="CC" />
-			<Option compile="0" />
-			<Option link="0" />
+		</Unit>
+		<Unit filename="../../src/server/service.c">
+			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="../../src/server/service.h" />
 		<Unit filename="../../src/test/main.c">
 			<Option compilerVar="CC" />
+			<Option target="Release" />
+			<Option target="test1" />
 		</Unit>
 		<Extensions>
 			<code_completion />
