@@ -5,6 +5,7 @@ typedef void *GrThreadHandle;
 
 GrThreadHandle procToThread(void (*proc)(void*), void* param);
 void joinThread(GrThreadHandle hnd);
+char isThreadRunning(GrThreadHandle hnd);
 
 void sleep(unsigned int millisecs);
 

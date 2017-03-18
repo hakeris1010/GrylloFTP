@@ -105,12 +105,37 @@ void sleep(unsigned int millisecs)
 void joinThread(GrThreadHandle hnd)
 {
     if(!hnd) return;
-    #if defined __WIN32
-        WaitForSingleObject( ((struct ThreadHandlePriv*)hnd)->hThread, INFINITE );
-    #elif defined __linux__
-        waitpid( ((struct ThreadHandlePriv*)hnd)->pid, NULL, 0 );
-    #endif
-
+    if(isThreadRunning(hnd))
+    {
+        #if defined __WIN32
+            WaitForSingleObject( ((struct ThreadHandlePriv*)hnd)->hThread, INFINITE );
+        #elif defined __linux__
+            waitpid( ((struct ThreadHandlePriv*)hnd)->pid, NULL, 0 );
+        #endif
+    }
+    // Now thread is no longer running, we can free it's handle.
     free( (struct ThreadHandlePriv*)hnd );
 }
 
+char isThreadRunning(GrThreadHandle hnd)
+{
+    if(!hnd) return 0;
+    #if defined __WIN32
+        DWORD status;
+        if( GetExitCodeThread( ((struct ThreadHandlePriv*)hnd)->hThread, &status ) ){
+            if(status == STILL_ACTIVE)
+                return 1; // Still running!
+        }
+    #elif defined __linux__
+        // Here we use kill (send signal to process), with signal as 0 - don't send, just check process state.
+        // Error occured, now check if process doesn't exist.
+        if( kill( ((struct ThreadHandlePriv*)hnd)->pid, 0 ) < 0 ){ 
+            if(errno == ESRCH) // Process doesn't exist.
+                return 0; // Not running.
+        }
+        return 1; // Thread running.
+    #endif
+    return 0;
+}
+
+//end.

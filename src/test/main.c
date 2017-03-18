@@ -1,4 +1,4 @@
-#include "../server/helper/grylthread.h"
+#include <grylthread.h>
 #include <stdio.h>
 
 void doShit(void* paramz0r)

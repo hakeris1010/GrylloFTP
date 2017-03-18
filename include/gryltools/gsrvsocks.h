@@ -29,4 +29,7 @@ int gsockErrorCleanup(SOCKET sock, struct addrinfo* addrin, const char* msg, cha
 int gsockCloseSocket(SOCKET sock);
 void gsockSockCleanup();
 
+int gsockConnectSocketEasySetup();
+int gsockListenSocketEasySetup();
+
 #endif

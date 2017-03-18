@@ -1,7 +1,7 @@
 #ifndef SERVICE_H_INCLUDED
 #define SERVICE_H_INCLUDED
 
-#include "gsrvsocks.h"
+#include <gsrvsocks.h>
 
 #include <stdio.h>
 #include <stdlib.h>

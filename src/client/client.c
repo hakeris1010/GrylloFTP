@@ -1,12 +1,14 @@
 
 #define WIN32_LEAN_AND_MEAN
 
-#include <windows.h>
+/*#include <windows.h>
 #include <winsock2.h>
-#include <ws2tcpip.h>
+#include <ws2tcpip.h>*/
 #include <stdlib.h>
 #include <stdio.h>
 #include <libgen.h>
+#include <gsrvsocks.h>
+#include "gbang.h"
 
 // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
 // If using GCC only needs Ws2_32
@@ -18,51 +20,165 @@
 #define DEFAULT_BUFLEN 512
 #define DEFAULT_PORT "27015"
 
+//
+
+void nullifyFnameEnd(char* fname, int size)
+{
+    if(!fname || size<=0) return;
+    fname[size] = 0;
+
+    for(int i=size-1; i>0; i--){
+        if(fname[i] < 32) // invalid
+            fname[i] = 0;
+    }
+}
+
+#define GETLINE_OK       0
+#define GETLINE_NO_INPUT 1
+#define GETLINE_TOO_LONG 2
+static int getLine (char *prmpt, char *buff, size_t sz) {
+    int ch, extra;
+
+    // Get line with buffer overrun protection.
+    if (prmpt) {
+        printf ("%s", prmpt);
+        fflush (stdout);
+    }
+    if (fgets (buff, sz, stdin) == NULL)
+        return GETLINE_NO_INPUT;
+
+    // If it was too long, there'll be no newline. In that case, we flush
+    // to end of line so that excess doesn't affect the next call.
+    if (buff[strlen(buff)-1] != '\n') {
+        extra = 0;
+        while (((ch = getchar()) != '\n') && (ch != EOF))
+            extra = 1;
+        return (extra == 1) ? GETLINE_TOO_LONG : GETLINE_OK;
+    }
+
+    // Otherwise remove newline and give string back to caller.
+    buff[strlen(buff)-1] = '\0';
+    return GETLINE_OK;
+}
+
+int executeCommand(SOCKET sock, const char* command, char* data, size_t datalen)
+{
+    struct GrylBangProtoData pd;
+    //memset(&pd, 0, sizeof(GrylBangProtoData));
+    datalen = (datalen > sizeof(pd.data) ? sizeof(pd.data) : datalen);
+
+    pd.version = GBANG_VERSION;
+
+    strncpy((pd.commandString), command, (strlen(command) > sizeof(pd.commandString) ? sizeof(pd.commandString) : strlen(command)));
+    if(data)
+        strncpy(pd.data, data, datalen);
+    
+    char onLargeDataBlock = 0, onFile = 0;
+    FILE* outFile = NULL;
+    if(strncmp(command, GBANG_REQUEST_FILE, strlen(GBANG_REQUEST_FILE))==0){
+        onFile = 1;
+        nullifyFnameEnd(data, datalen);
+        outFile = fopen(basename(data), "wb");
+    }
+
+    int iResult = send( sock, (char*)&pd, GBANG_HEADER_SIZE + datalen, 0 );
+    if (iResult == SOCKET_ERROR) {
+        printf("send failed with error: %d\n", gsockGetLastError());
+        if(outFile)
+            fclose(outFile);
+        return -1;
+    }
+    printf("Bytes Sent: %ld\n", iResult);
+    int retval = 0;
+    printf("\nReceiving the response...\n");
+    // Receive until the peer closes the connection
+    do {
+        // Wait until some packet appears in the socket's receive queue on a port.
+        // When it appears, extract it from queue into the buffer (recvbuf) with the specified lenght.
+        // Flags are set to null, we perform a basic receive.
+        // This call blocks the thread until first packet appears on a queue, unless we specify NOBLOCK on flags.
+        iResult = recv(sock, (char*)&pd, sizeof(struct GrylBangProtoData), 0);
+        if ( iResult > 0 ){                  // > 0 - iResult Bytes received.
+            printf("Bytes received: %d.\n", iResult);
+            if(strncmp(pd.commandString, GBANG_ERROR, strlen(GBANG_ERROR))==0){
+                // Error occured.
+                printf("Error response received: %.*s", sizeof(pd.commandString), pd.commandString);
+                break;
+            }
+            else if(strncmp(pd.commandString, GBANG_DATA_START, strlen(GBANG_DATA_START))==0)
+                onLargeDataBlock = 1;
+            
+            else if(strncmp(pd.commandString, GBANG_DATA_END, strlen(GBANG_DATA_END))==0){
+                printf("End of data stream. \n");
+                break;
+            }
+            else if(strncmp(pd.commandString, GBANG_DATA_SENDING, strlen(GBANG_DATA_SENDING))==0){
+                if(onFile){
+                    if(outFile)
+                        fwrite(pd.data, 1, iResult, outFile);
+                }
+                else
+                    printf("\n%.*s\n", iResult, pd.data);
+            }
+
+            else break;    
+        }
+        else if ( iResult == 0 ){            // == 0 - Connection stream mode is closing. FIN handshake has been made.
+            printf("Connection closed\n");
+            retval = -1;
+        }
+        else{                                // < 0 - error has occured while receiving.
+            printf("recv failed with error: %d\n", gsockGetLastError());
+            retval = -1;
+        }
+
+    } while( iResult > 0 );
+    fclose(outFile);
+
+    return retval;
+}
+
 int __cdecl main(int argc, char **argv) 
 {
-    WSADATA wsaData; // Winsock instance data.
     SOCKET ConnectSocket = INVALID_SOCKET; // Socket for connection to da server.
     struct addrinfo *result = NULL,
                     hints;
     char recvbuf[DEFAULT_BUFLEN];
-    int iResult;
+    int iResult, 
+        oneCommand = 0;
     size_t recvbuflen = sizeof(recvbuf);
     
-    char* localFname;
-
+    FILE* outputFile = NULL;
+    FILE* g_inputFd = stdin;
+    FILE* g_outputFd = stdout;
     // Validate the parameters
-    if (argc < 4 || (argc>1 ? strcmp(argv[1], "--help")==0 : 0)) {
-        printf("usage: %s server-name server-port remote-filename [local-filename]\n", basename(argv[0]));
+    if ((argc==2 ? strcmp(argv[1], "--help")==0 : 0) || argc<3) {
+        printf("usage: %s server-name server-port [remote-command] [local-filename]\n \
+        \nIf local-filename is set, command output will be redirected to the filename", basename(argv[0]));
         return 1;
     }
 
-    if(argc==5) // Local file path has been passed.
-        localFname = argv[4];
-    else // hasn't been passed.
-        localFname = basename(argv[3]); // we'll save it on executable's dir.
+    if(argc>3) // Command name specified.
+        oneCommand = 1;
 
-    FILE* fff = fopen(localFname, "wb");
-    if(!fff){
-        printf("Bad local filename given. Maybe directory doesn't exist?\nWill save on local a.dat\n");
-        if(!(fff = fopen("a.dat", "wb")))
-            return 1;
+    if(argc==5){ // Local file path has been passed.
+        if(!(outputFile = fopen(argv[4], "wb")));
+        printf("error.\n");
     }
-    // At this point the output local file has been created successfully.
-    
     //--------------- Connect to a SeRVeR ----------------//    
 
-    printf("Will connect to a server \"%s\" on port %s\nFile requested: %s\n\nInit WinSock...", argv[1], argv[2], argv[3]);
+    printf("Will connect to a server \"%s\" on port %s\n\nInit WinSock...", argv[1], argv[2]);
 
     // Initialize Winsock
-    iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
+    iResult = gsockInitSocks();
     if (iResult != 0) {
-        printf("WSAStartup failed with error: %d\n", iResult);
-        fclose(fff);
+        printf("gsockInitSocks() failed with error: %d\n", iResult);
         return 1;
     }
     
     printf("Done.\nSet AddrInfo hints: ai_family=AF_UNSPEC, ai_socktype=SOCK_STREAM, ai_protocol=IPPROTO_TCP\n");
-    ZeroMemory( &hints, sizeof(hints) );
+    
+    memset( &hints, 0, sizeof(hints) );
     hints.ai_family = AF_UNSPEC;        // Use IPv4 or IPv6, respectively.
     hints.ai_socktype = SOCK_STREAM;    // Stream mode (Connection-oriented)
     hints.ai_protocol = IPPROTO_TCP;    // Use TCP (Guaranteed delivery n stuff).
@@ -76,10 +192,7 @@ int __cdecl main(int argc, char **argv)
     // 4: Result addrinfo struct. The server address might return more than one connectable entities, so ADDRINFO uses a linked list.
     iResult = getaddrinfo(argv[1], argv[2], &hints, &result);
     if ( iResult != 0 ) {
-        printf("getaddrinfo failed with error: %d\n", iResult);
-        WSACleanup();
-        fclose(fff);
-        return 1;
+        return gsockErrorCleanup(0, NULL, "getaddrinfo failed with error: ", 1, 1);
     }
 
     printf("Done.\nTry to connect to the first connectable entity of the server...\n");
@@ -92,10 +205,7 @@ int __cdecl main(int argc, char **argv)
         // Create a SOCKET for connecting to server
         ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
         if (ConnectSocket == INVALID_SOCKET) {
-            printf("socket failed with error: %ld\n", WSAGetLastError());
-            WSACleanup();
-            fclose(fff);
-            return 1;
+            return gsockErrorCleanup(0, NULL, "socket failed with error: ", 1, 1);
         }
 
         // Connect to server.
@@ -107,7 +217,7 @@ int __cdecl main(int argc, char **argv)
         if (iResult == SOCKET_ERROR) {
             closesocket(ConnectSocket);
             ConnectSocket = INVALID_SOCKET;
-            continue;
+            continue; // Resume to the next entity.
         }
         // We found a connectable address entity, so we can quit now.
         break;
@@ -117,67 +227,41 @@ int __cdecl main(int argc, char **argv)
     
     // The server might refuse a connection, so we must check if ConnectSocket is INVALID.
     if (ConnectSocket == INVALID_SOCKET) {
-        printf("Unable to connect to server!\n");
-        WSACleanup();
-        fclose(fff);
-        return 1;
+        return gsockErrorCleanup(0, NULL, "Unable to connect to server! ", 1, 1);
     }
-    
-    printf("\nDone.\nSending the initial buffer (File name)... ");
+    // Now we can start the session.
 
-    // Send a buffer.
-    // We send the file name (on the server), expecting the server to send the file contents back.
-    // Arg4: Flags. No flags specified, perform a basic send over TCP/UDP.
-    // Result: Byte count actually sent.
-    iResult = send( ConnectSocket, argv[3], (int)strlen(argv[3]), 0 );
-    if (iResult == SOCKET_ERROR) {
-        printf("send failed with error: %d\n", WSAGetLastError());
-        closesocket(ConnectSocket);
-        WSACleanup();
-        fclose(fff);
-        return 1;
+    if(oneCommand)
+    {
+        // Parse command.
+        char* command = strtok(argv[3], " ");
+        char* data = strtok(NULL, " ");
+        
+        iResult = executeCommand(ConnectSocket, command, data, (data ? strlen(data) : 0));
     }
+    else // run loop with user inputing data.
+    {
+        printf("Starting loop...\n");
+        char canRun = 1;
+        while(canRun)
+        {
+            printf("\n>");
+            getLine(NULL, recvbuf, recvbuflen);
+            
+            char* command = strtok(recvbuf, " \n");
+            char* data = strtok(NULL, " \n");
+			printf("\nCommand: |%s|\nData: |%s|\n\n", command, data);
 
-    printf("Bytes Sent: %ld\n", iResult);
-
-    // shutdown the connection since no more data will be sent
-    // We pass SD_SEND, because we are a client that is sending data, and we signal that we won't send data to the server.
-    // However, the socket remains active and can still receive connections on it's assigned port.
-    // A FIN handshake will be performed to end the stream send connection mode.
-    iResult = shutdown(ConnectSocket, SD_SEND);
-    if (iResult == SOCKET_ERROR) {
-        printf("shutdown failed with error: %d\n", WSAGetLastError());
-        closesocket(ConnectSocket);
-        WSACleanup();
-        fclose(fff);
-        return 1;
-    }
-    
-    printf("\nReceiving the response...\n");
-
-    // Receive until the peer closes the connection
-    do {
-        // Wait until some packet appears in the socket's receive queue on a port.
-        // When it appears, extract it from queue into the buffer (recvbuf) with the specified lenght.
-        // Flags are set to null, we perform a basic receive.
-        // This call blocks the thread until first packet appears on a queue, unless we specify NOBLOCK on flags.
-        iResult = recv(ConnectSocket, recvbuf, recvbuflen, 0);
-        if ( iResult > 0 ){                  // > 0 - iResult Bytes received.
-            printf("Bytes received: %d. Writing data to file...\n", iResult);
-            fwrite(recvbuf, 1, iResult, fff); // Write the data to our "fff" file.
+            if(executeCommand(ConnectSocket, command, data, (data ? strlen(data) : 0)) < 0) // Error or need to close sock.
+                break;
         }
-        else if ( iResult == 0 )            // == 0 - Connection stream mode is closing. FIN handshake has been made.
-            printf("Connection closed\n");
-        else                                // < 0 - error has occured while receiving.
-            printf("recv failed with error: %d\n", WSAGetLastError());
+    }
 
-    } while( iResult > 0 );
-    
-    printf("Exitting...\n");
+    printf("Connection closed. Exitting...\n");
+
     // cleanup. close the socket, and terminate the Winsock.dll instance bound to our app.
     closesocket(ConnectSocket);
-    WSACleanup();
-    fclose(fff);
+    gsockSockCleanup();
 
     return 0;
 }

@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "gsrvsocks.h"
+#include <gsrvsocks.h>
 #include "service.h"
 
 // Need to link with Ws2_32.lib
