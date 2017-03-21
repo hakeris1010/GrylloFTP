@@ -28,23 +28,23 @@ endif
 
 #====================================#
 
-SOURCES_SERVER= src/server/server.c \
-                src/server/service.c 
+SOURCES_SERVER= src/GrylloFTP/server/server.c \
+                src/GrylloFTP/server/service.c 
 LIBS_SERVER= $(GRYLTOOLS_LIB)
 
-SOURCES_CLIENT= src/client/client.c
+SOURCES_CLIENT= src/GrylloFTP/client/client.c
 LIBS_CLIENT= $(GRYLTOOLS_LIB)
 
 SOURCES_TEST1=  src/test/main.c 
 LIBS_TEST1= $(GRYLTOOLS_LIB)
 
-SOURCES_GRYLTOOLS = src/gryltools/grylthread.c \
-                    src/gryltools/gsrvsocks.c \
-                    src/gryltools/hlog.c
+SOURCES_GRYLTOOLS = src/GrylloFTP/gryltools/grylthread.c \
+                    src/GrylloFTP/gryltools/gsrvsocks.c \
+                    src/GrylloFTP/gryltools/hlog.c
 
-HEADERS_GRYLTOOLS=  src/gryltools/grylthread.h \
-                    src/gryltools/gsrvsocks.h \
-                    src/gryltools/hlog.h
+HEADERS_GRYLTOOLS=  src/GrylloFTP/gryltools/grylthread.h \
+                    src/GrylloFTP/gryltools/gsrvsocks.h \
+                    src/GrylloFTP/gryltools/hlog.h
 LIBS_GRYLTOOLS=
 
 #====================================#
@@ -62,7 +62,7 @@ TEST1= $(TESTDIR)/test1
 
 #====================================#
 
-DEBUG_INCLUDES= -Isrc/gryltools
+DEBUG_INCLUDES= -Isrc/GrylloFTP/gryltools
 RELEASE_INCLUDES= -I$(GRYLTOOLS_HEAD)
 
 #===================================#
