@@ -27,18 +27,22 @@ int main(int argc, char** argv)
 {
     char data1[32] = "\0\0\0\0\0\0\0\0NyaaNyaa :3\0";
     *((int*)data1)     =   1; // Thread Id
-    *((int*)(data1+4)) = 10000; // Number of loop iterations.
+    *((int*)(data1+4)) = 10; // Number of loop iterations.
 
     GrThreadHandle h1 = procToThread(doShit, &data1);
-
+//aaaaa
     char data2[32] = "\0\0\0\0\0\0\0\0Kawaii~~ :3\0";
     *((int*)data2)     =   2; // Thread Id
-    *((int*)(data2+4)) = 10000; // Number of loop iterations.
+    *((int*)(data2+4)) = 10; // Number of loop iterations.
     GrThreadHandle h2 = procToThread(doShit, &data2);
-
+    
+    for(int i=0; i<10; i++)
+        printf(" I am very cute :3 \n");
+    
     //sleep(10000);
     joinThread(h1);
     joinThread(h2);
 
     return 0;
 }
+

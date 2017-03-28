@@ -35,17 +35,31 @@ LIBS_SERVER= $(GRYLTOOLS_LIB)
 SOURCES_CLIENT= src/GrylloFTP/client/client.c
 LIBS_CLIENT= $(GRYLTOOLS_LIB)
 
-SOURCES_TEST1=  src/test/main.c 
-LIBS_TEST1= $(GRYLTOOLS_LIB)
-
 SOURCES_GRYLTOOLS = src/GrylloFTP/gryltools/grylthread.c \
                     src/GrylloFTP/gryltools/gsrvsocks.c \
-                    src/GrylloFTP/gryltools/hlog.c
+                    src/GrylloFTP/gryltools/hlog.c \
+                    src/GrylloFTP/gryltools/gmisc.c
 
 HEADERS_GRYLTOOLS=  src/GrylloFTP/gryltools/grylthread.h \
                     src/GrylloFTP/gryltools/gsrvsocks.h \
-                    src/GrylloFTP/gryltools/hlog.h
+                    src/GrylloFTP/gryltools/hlog.h \
+                    src/GrylloFTP/gryltools/gmisc.h
 LIBS_GRYLTOOLS=
+
+#====================================#
+
+SOURCES_TEST1=  src/test/test1.c 
+LIBS_TEST1= $(GRYLTOOLS_LIB)
+TEST1= $(TESTDIR)/test1
+
+SOURCES_TEST2=  src/test/test2.c 
+LIBS_TEST2= $(GRYLTOOLS_LIB)
+TEST2= $(TESTDIR)/test2
+
+#-----------#
+#tests
+
+TESTNAME= $(TEST1) $(TEST2)
 
 #====================================#
 #$(addprefix $(INCLUDEDIR)/gryltools/, $(notdir HEADERS_GRYLTOOLS))    
@@ -55,10 +69,7 @@ GRYLTOOLS_LIB= $(LIBDIR)/gryltools.a
 
 SERVNAME= $(BINDIR)/server
 CLINAME= $(BINDIR)/client
-TESTNAME= $(TEST1)
 GRYLTOOLS= gryltools
-
-TEST1= $(TESTDIR)/test1
 
 #====================================#
 
@@ -67,11 +78,14 @@ RELEASE_INCLUDES= -I$(GRYLTOOLS_HEAD)
 
 #===================================#
 
-debug: CFLAGS += $(DEBUG_CFLAGS) $(DEBUG_INCLUDES)
-debug: $(GRYLTOOLS) $(SERVNAME) $(CLINAME) $(TESTNAME)
+debops: 
+	$(eval CFLAGS += $(DEBUG_CFLAGS) $(DEBUG_INCLUDES))
 
-release: CFLAGS += $(RELEASE_CFLAGS) $(RELEASE_INCLUDES) 
-release: $(GRYLTOOLS) $(SERVNAME) $(CLINAME) $(TESTNAME)
+relops: 
+	$(eval CFLAGS += $(RELEASE_CFLAGS) $(RELEASE_INCLUDES)) 
+
+debug: debops $(GRYLTOOLS) $(SERVNAME) $(CLINAME) $(TESTNAME)
+release: relops $(GRYLTOOLS) $(SERVNAME) $(CLINAME) $(TESTNAME)
 
 .c.o:
 	$(CC) $(CFLAGS) -c $*.c -o $*.o
@@ -86,15 +100,34 @@ $(GRYLTOOLS_LIB): $(SOURCES_GRYLTOOLS:.c=.o) $(LIBS_GRYLTOOLS)
 	$(AR) -rvsc $@ $^ 
 
 $(GRYLTOOLS): $(GRYLTOOLS_LIB) $(GRYLTOOLS_HEAD)    
+$(GRYLTOOLS)_debug: debops $(GRYLTOOLS)
 
 $(SERVNAME): $(SOURCES_SERVER:.c=.o) $(LIBS_SERVER)
 	$(CC) -o $@ $^ $(LDFLAGS)
+$(SERVNAME)_debug: debops $(SERVNAME)    
 
 $(CLINAME): $(SOURCES_CLIENT:.c=.o) $(LIBS_CLIENT)
 	$(CC) -o $@ $^ $(LDFLAGS)
+$(CLINAME)_debug: debops $(CLINAME)    
+
+#===================================#
+# Tests
+
+test_debug: debops $(TESTNAME)
 
 $(TEST1): $(SOURCES_TEST1:.c=.o) $(LIBS_TEST1) 
 	$(CC) -o $@ $^ $(LDFLAGS)
+
+$(TEST2): $(SOURCES_TEST2:.c=.o) $(LIBS_TEST2) 
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+## $1 - target name, $2 - sources, $3 - libs
+#define make_test_target
+# $1: \$(patsubst %.c,%.o, $2) $3
+#	$(CC) -o $@ $^ $(LDFLAGS)
+#endef    
+#
+#$(foreach elem, $(TESTNAME), $(eval $(call make_test_target, elem, )) )
 
 #===================================#
 

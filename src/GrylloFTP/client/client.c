@@ -7,8 +7,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <libgen.h>
+#include <gmisc.h>
 #include <gsrvsocks.h>
-#include "gbang.h"
+#include "../gftp/gftp.h"
 
 // Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
 // If using GCC only needs Ws2_32
@@ -19,48 +20,8 @@
 
 #define DEFAULT_BUFLEN 512
 #define DEFAULT_PORT "27015"
-
+/*
 //
-
-void nullifyFnameEnd(char* fname, int size)
-{
-    if(!fname || size<=0) return;
-    fname[size] = 0;
-
-    for(int i=size-1; i>0; i--){
-        if(fname[i] < 32) // invalid
-            fname[i] = 0;
-    }
-}
-
-#define GETLINE_OK       0
-#define GETLINE_NO_INPUT 1
-#define GETLINE_TOO_LONG 2
-static int getLine (char *prmpt, char *buff, size_t sz) {
-    int ch, extra;
-
-    // Get line with buffer overrun protection.
-    if (prmpt) {
-        printf ("%s", prmpt);
-        fflush (stdout);
-    }
-    if (fgets (buff, sz, stdin) == NULL)
-        return GETLINE_NO_INPUT;
-
-    // If it was too long, there'll be no newline. In that case, we flush
-    // to end of line so that excess doesn't affect the next call.
-    if (buff[strlen(buff)-1] != '\n') {
-        extra = 0;
-        while (((ch = getchar()) != '\n') && (ch != EOF))
-            extra = 1;
-        return (extra == 1) ? GETLINE_TOO_LONG : GETLINE_OK;
-    }
-
-    // Otherwise remove newline and give string back to caller.
-    buff[strlen(buff)-1] = '\0';
-    return GETLINE_OK;
-}
-
 int executeCommand(SOCKET sock, const char* command, char* data, size_t datalen)
 {
     struct GrylBangProtoData pd;
@@ -266,4 +227,9 @@ int __cdecl main(int argc, char **argv)
     return 0;
 }
 
+*/
 
+int main()
+{
+    return 0;
+}
