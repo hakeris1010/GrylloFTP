@@ -18,7 +18,7 @@
 
     #define INVALID_SOCKET -1
     #define SOCKET_ERROR   -1
-
+    
     typedef int SOCKET
 
 #endif // __linux__ || __WIN32
@@ -29,7 +29,10 @@ int gsockErrorCleanup(SOCKET sock, struct addrinfo* addrin, const char* msg, cha
 int gsockCloseSocket(SOCKET sock);
 void gsockSockCleanup();
 
-int gsockConnectSocketEasySetup();
-int gsockListenSocketEasySetup();
+SOCKET gsockConnectSocket(const char* addr, const char* port, int socktype, int protocol);
+SOCKET gsockListenSocket(const char* port, int family, int socktype, int protocol);
+
+int gsockReceive(SOCKET sock, char* buff, size_t bufsize, int flags);
+int gsockSend(SOCKET sock, const char* buff, size_t bufsize, int flags); 
 
 #endif

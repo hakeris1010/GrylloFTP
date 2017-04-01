@@ -97,14 +97,18 @@ int executeCommand(SOCKET sock, const char* command, char* data, size_t datalen)
     fclose(outFile);
 
     return retval;
-}
+}*/
+
+
 
 int __cdecl main(int argc, char **argv) 
 {
-    SOCKET ConnectSocket = INVALID_SOCKET; // Socket for connection to da server.
+    hlogSetActive(1);
+
+    SOCKET ControlSocket = INVALID_SOCKET,
     struct addrinfo *result = NULL,
                     hints;
-    char recvbuf[DEFAULT_BUFLEN];
+    char recvbuf[FTP_DEFAULT_BUFLEN];
     int iResult, 
         oneCommand = 0;
     size_t recvbuflen = sizeof(recvbuf);
@@ -137,85 +141,41 @@ int __cdecl main(int argc, char **argv)
         return 1;
     }
     
-    printf("Done.\nSet AddrInfo hints: ai_family=AF_UNSPEC, ai_socktype=SOCK_STREAM, ai_protocol=IPPROTO_TCP\n");
+    printf("Done.\nNow trying to connect.\n");
     
-    memset( &hints, 0, sizeof(hints) );
-    hints.ai_family = AF_UNSPEC;        // Use IPv4 or IPv6, respectively.
-    hints.ai_socktype = SOCK_STREAM;    // Stream mode (Connection-oriented)
-    hints.ai_protocol = IPPROTO_TCP;    // Use TCP (Guaranteed delivery n stuff).
-    
-    printf("Resolve server address & port (GetAddrInfo)... ");
-
-    // Resolve the server address and port
-    // 1: Server address (ipv4, ipv6, or DNS)
-    // 2: Port of the server.
-    // 3: hints (above)
-    // 4: Result addrinfo struct. The server address might return more than one connectable entities, so ADDRINFO uses a linked list.
-    iResult = getaddrinfo(argv[1], argv[2], &hints, &result);
-    if ( iResult != 0 ) {
-        return gsockErrorCleanup(0, NULL, "getaddrinfo failed with error: ", 1, 1);
-    }
-
-    printf("Done.\nTry to connect to the first connectable entity of the server...\n");
-    // Attempt to connect to an address until one succeeds
-    int cnt=0;
-    for(struct addrinfo* ptr=result; ptr != NULL; ptr=ptr->ai_next) {
-        printf(" Trying to connect to entity #%d\n", cnt);
-        cnt++;
-
-        // Create a SOCKET for connecting to server
-        ConnectSocket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
-        if (ConnectSocket == INVALID_SOCKET) {
-            return gsockErrorCleanup(0, NULL, "socket failed with error: ", 1, 1);
-        }
-
-        // Connect to server.
-        // 1: the socket handle for maintaining a connection
-        // 2: server address (IPv4, IPv6, or other (if using UNIX sockets))
-        // 3: address lenght in bytes.
-        // This makes the TCP/UDP SYN handshake.
-        iResult = connect( ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen);
-        if (iResult == SOCKET_ERROR) {
-            closesocket(ConnectSocket);
-            ConnectSocket = INVALID_SOCKET;
-            continue; // Resume to the next entity.
-        }
-        // We found a connectable address entity, so we can quit now.
-        break;
-    }
-    // Free the result ADDRINFO* structure, we no longer need it.
-    freeaddrinfo(result);
-    
-    // The server might refuse a connection, so we must check if ConnectSocket is INVALID.
-    if (ConnectSocket == INVALID_SOCKET) {
-        return gsockErrorCleanup(0, NULL, "Unable to connect to server! ", 1, 1);
-    }
+    ControlSocket = gsockConnectSocket(argv[1], argv[2], SOCK_STREAM, IPPROTO_TCP);
+    if(ControlSocket == INVALID_SOCKET)
+        return gsockErrorCleanup(0, NULL, "Can't connect to a madafakkin' server....", 1, 1); 
+     
     // Now we can start the session.
 
-    if(oneCommand)
+    /*if(oneCommand)
     {
         // Parse command.
         char* command = strtok(argv[3], " ");
         char* data = strtok(NULL, " ");
         
         iResult = executeCommand(ConnectSocket, command, data, (data ? strlen(data) : 0));
-    }
-    else // run loop with user inputing data.
-    {
-        printf("Starting loop...\n");
-        char canRun = 1;
-        while(canRun)
-        {
-            printf("\n>");
-            getLine(NULL, recvbuf, recvbuflen);
-            
-            char* command = strtok(recvbuf, " \n");
-            char* data = strtok(NULL, " \n");
-			printf("\nCommand: |%s|\nData: |%s|\n\n", command, data);
+    }*/
 
-            if(executeCommand(ConnectSocket, command, data, (data ? strlen(data) : 0)) < 0) // Error or need to close sock.
-                break;
-        }
+    // Get the response from s3rver.
+    
+
+    printf("Starting loop...\n");
+    char canRun = 1;
+    while(canRun)
+    {
+
+
+        printf("\n>");
+        getLine(NULL, recvbuf, recvbuflen);
+        
+        char* command = strtok(recvbuf, " \n");
+        char* data = strtok(NULL, " \n");
+        printf("\nCommand: |%s|\nData: |%s|\n\n", command, data);
+
+        if(executeCommand(ConnectSocket, command, data, (data ? strlen(data) : 0)) < 0) // Error or need to close sock.
+            break;
     }
 
     printf("Connection closed. Exitting...\n");
@@ -227,9 +187,3 @@ int __cdecl main(int argc, char **argv)
     return 0;
 }
 
-*/
-
-int main()
-{
-    return 0;
-}

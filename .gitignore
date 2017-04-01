@@ -50,8 +50,13 @@ Temporary Items
 *.a
 *.lib
 
+# Editor / IDE files
+*.swp
+*.depend
+*.layout
+
 # Objects
 *.o
-*.obj
+#*.obj
 build/obj/
 obj/

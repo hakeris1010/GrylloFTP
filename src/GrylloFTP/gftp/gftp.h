@@ -8,6 +8,9 @@
 #define GFTP_VERSION "0.1 pre"
 #define FTP_VERSION "unimpl"
 
+// Buffer lenght
+#define FTP_DEFAULT_BUFLEN 1500
+
 // Default ports
 #define FTP_CONTROL_PORT    21
 #define FTP_DATA_PORT       20

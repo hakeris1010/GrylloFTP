@@ -4,6 +4,7 @@
 #define HLOG_DEFAULT_LOGFILE stdout
 
 static FILE* curFile = NULL;
+static char active = 1;
 
 FILE* hlogSetFile(const char* fname, char mode)
 {
@@ -34,6 +35,8 @@ FILE* hlogGetFile()
 
 void hlogf(const char* fmt, ...)
 {
+    if(!active)
+        return;
     if(!curFile)
         curFile = HLOG_DEFAULT_LOGFILE;
 
@@ -44,3 +47,12 @@ void hlogf(const char* fmt, ...)
 
     va_end(vl);
 }
+
+char hlogIsActive(){
+    return active;
+}
+
+void hlogSetActive(char val){
+    active = val;
+}
+
