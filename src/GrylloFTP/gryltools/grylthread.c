@@ -15,6 +15,12 @@
 #define GRYLTHREADMODE_LINUX_FORK     1 // by now only this mode is implemented.
 #define GRYLTHREADMODE_LINUX_PTHREAD  2
 
+//TODO: Implement flags, e.g. set inactive flag when execution ends.
+
+// Thread flags.
+#define GRYLTHREAD_FLAG_ACTIVE  1
+
+
 // Threading utilities.
 struct ThreadFuncAttribs_Extended
 {
@@ -46,6 +52,7 @@ struct ThreadHandlePriv
     #elif defined __linux__
         pid_t pid;
     #endif
+    char flags;
 };
 
 #if defined __WIN32
@@ -135,6 +142,7 @@ char isThreadRunning(GrThreadHandle hnd)
         }
         return 1; // Thread running.
     #endif
+
     return 0;
 }
 

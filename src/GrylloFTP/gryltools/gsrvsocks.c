@@ -134,8 +134,14 @@ SOCKET gsockListenSocket(SOCKET sock, const char* port, int family, int socktype
 }
 
 // Functions for sending and receiving multipacket buffers.
-int gsockReceive(SOCKET sock, char* buff, size_t bufsize, int flags);
+int gsockReceive(SOCKET sock, char* buff, size_t bufsize, int flags)
+{
+    //a
+}
 
-int gsockSend(SOCKET sock, const char* buff, size_t bufsize, int flags); 
+int gsockSend(SOCKET sock, const char* buff, size_t bufsize, int flags)
+{
+    //a
+}
 
 
