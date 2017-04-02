@@ -12,6 +12,8 @@ FILE* hlogSetFile(const char* fname, char mode);
 void hlogSetFileFromFile(FILE* file, char mode);
 void hlogCloseFile();
 FILE* hlogGetFile();
+char hlogIsActive();
+void hlogSetActive(char val);
 
 /* Write to the LogFile (Printf style) */
 void hlogf( const char* fmt, ... );

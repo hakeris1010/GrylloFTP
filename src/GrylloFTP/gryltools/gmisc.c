@@ -1,4 +1,5 @@
 #include "gmisc.h"
+#include <string.h>
 
 void gmisc_NullifyStringEnd(char* fname, size_t size, const char* delim)
 {
@@ -21,12 +22,15 @@ int gmisc_GetLine(const char *prmpt, char *buff, size_t sz, FILE* file ) {
         printf ("%s", prmpt);
         fflush (stdout);
     }
-    if (fgets (buff, sz, file) == NULL)
+    if (fgets (buff, sz, file) == NULL){
+        buff[0] = 0; // Nullify
         return GMISC_GETLINE_NO_INPUT;
+    }
 
     // If it was too long, there'll be no newline. In that case, we flush
     // to end of line so that excess doesn't affect the next call.
     if (buff[strlen(buff)-1] != '\n') {
+        buff[sz] = 0;
         extra = 0;
         while (( (ch = fgetc(file)) != '\n') && (ch != EOF))
             extra = 1;

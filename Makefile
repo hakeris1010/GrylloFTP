@@ -78,14 +78,16 @@ RELEASE_INCLUDES= -I$(GRYLTOOLS_HEAD)
 
 #===================================#
 
+all: debug
+
 debops: 
 	$(eval CFLAGS += $(DEBUG_CFLAGS) $(DEBUG_INCLUDES))
 
 relops: 
 	$(eval CFLAGS += $(RELEASE_CFLAGS) $(RELEASE_INCLUDES)) 
 
-debug: debops $(GRYLTOOLS) $(SERVNAME) $(CLINAME) $(TESTNAME)
-release: relops $(GRYLTOOLS) $(SERVNAME) $(CLINAME) $(TESTNAME)
+debug: debops $(GRYLTOOLS) $(CLINAME) $(TESTNAME)
+release: relops $(GRYLTOOLS) $(CLINAME) $(TESTNAME)
 
 .c.o:
 	$(CC) $(CFLAGS) -c $*.c -o $*.o

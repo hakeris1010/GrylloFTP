@@ -7,6 +7,7 @@
 #include <gmisc.h>
 #include <gsrvsocks.h>
 #include <grylthread.h>
+#include <hlog.h>
 #include "../gftp/gftp.h"
 
 #define MAX_DATA_THREADS 8
@@ -75,26 +76,50 @@ void dataThreadRunner(void* param)
 
 // The command interpreter
 
-int executeCommand(SOCKET sock, const char* command, struct FTPClientState* state)
+int executeCommand(SOCKET sock, const char* command, FTPClientState* state)
 {
     //a
+    return -1;
+}
+
+/*! Authorization of the connection.
+ *  - Called just after initializing a connection.
+ *  - Authorizes the user and starts a valid FTP session.
+ *  - On error return < 0.
+ */
+int authorizeConnection(SOCKET sock)
+{
+    char recvbuf[FTP_DEFAULT_BUFLEN];
+    // Get the response from s3rver. First reply - The welcome message
+    iResult = recv(ControlSocket, recvbuf, sizeof(recvbuf), 0);
+    if(iResult < 0){
+        hlogf("Error receiving welcome message.\n");
+        return -2;
+    }
+    // Print the message
+    recvbuf[iResult] = 0;
+    printf("\n%s\n", recvbuf);
+    
+    // Start user authorization. Straightforward, no encryption, just like the good ol' days :)
+    strcpy(recvbuf, "USER ");
+    gmisc_GetLine("Name: ", recvbuf+5, sizeof(recvbuf), stdin);
 }
 
 int __cdecl main(int argc, char **argv) 
 {
-    hlogSetActive(1);
+    SOCKET ControlSocket = INVALID_SOCKET;
 
-    SOCKET ControlSocket = INVALID_SOCKET,
     struct addrinfo *result = NULL,
                     hints;
+
     char recvbuf[FTP_DEFAULT_BUFLEN];
+    size_t recvbuflen = sizeof(recvbuf);
     int iResult, 
         oneCommand = 0;
-    size_t recvbuflen = sizeof(recvbuf);
     
-    FILE* outputFile = NULL;
-    FILE* g_inputFd = stdin;
-    FILE* g_outputFd = stdout;
+    // Activate the logger
+    hlogSetActive(1);
+
     // Validate the parameters
     if ((argc==2 ? strcmp(argv[1], "--help")==0 : 0) || argc<3) {
         printf("usage: %s server-name server-port [remote-command] [local-filename]\n \
@@ -102,13 +127,6 @@ int __cdecl main(int argc, char **argv)
         return 1;
     }
 
-    if(argc>3) // Command name specified.
-        oneCommand = 1;
-
-    if(argc==5){ // Local file path has been passed.
-        if(!(outputFile = fopen(argv[4], "wb")));
-        printf("error.\n");
-    }
     //--------------- Connect to a SeRVeR ----------------//    
 
     printf("Will connect to a server \"%s\" on port %s\n\nInit WinSock...", argv[1], argv[2]);
@@ -125,34 +143,30 @@ int __cdecl main(int argc, char **argv)
     ControlSocket = gsockConnectSocket(argv[1], argv[2], SOCK_STREAM, IPPROTO_TCP);
     if(ControlSocket == INVALID_SOCKET)
         return gsockErrorCleanup(0, NULL, "Can't connect to a madafakkin' server....", 1, 1); 
-     
-    // Now we can start the session.
-    // Get the response from s3rver. First reply - The welcome message
     
-    // Now print when receiving for each message received.
-    iResult = receiveAndPerformForEachPacket(ControlSocket, recvbuf, recvbuflen, 0, printBuffer, NULL);
-    if(iResult != 0)
-        printf("Err occurr'd.\n");
+    //---------------   Start a SessioN  ----------------// 
 
+    // The state structure    
+    FTPClientState ftpCliState = {0};    
+
+    if( authorizeConnection(ControlSocket) < 0 )
+        return gsockErrorCleanup(ControlSocket, NULL, "Error authorizing a connection!", 1, 1); 
+
+    
     printf("Starting loop...\n");
-
     char canRun = 1;
     while(canRun)
     {
         gmisc_GetLine("\nftp> ", recvbuf, recvbuflen, stdin);
-        
-        char* command = strtok(recvbuf, " \n");
-        char* data = strtok(NULL, " \n");
-        printf("\nCommand: |%s|\nData: |%s|\n\n", command, data);
 
-        if(executeCommand(ConnectSocket, command, data, (data ? strlen(data) : 0)) < 0) // Error or need to close sock.
+        if( executeCommand(ControlSocket, recvbuf, &ftpCliState) < 0 ) // Error or need to close sock.
             break;
     }
 
     printf("Connection closed. Exitting...\n");
 
     // cleanup. close the socket, and terminate the Winsock.dll instance bound to our app.
-    closesocket(ConnectSocket);
+    gsockCloseSocket(ControlSocket);
     gsockSockCleanup();
 
     return 0;

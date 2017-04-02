@@ -66,11 +66,11 @@ int gsockCloseSocket(SOCKET sock)
 
 SOCKET gsockConnectSocket(const char* address, const char* port, int socktype, int protocol)
 {
-    hlogf("\ngsockConnectSocket(): Trying to connect to: %s, on port: %s.\n", addr, port);
+    hlogf("\ngsockConnectSocket(): Trying to connect to: %s, on port: %s.\n", address, port);
     hlogf("Set AddrInfo hints: ai_family=AF_UNSPEC, ai_socktype=%d, ai_protocol=%d\n", socktype, protocol);
     
     SOCKET ConnectSocket = INVALID_SOCKET;
-    struct addrinfo hints = { 0 };
+    struct addrinfo hints = { 0 },
                     *result;
     //memset( &hints, 0, sizeof(hints) );
     hints.ai_family = AF_UNSPEC;        // Use IPv4 or IPv6, respectively.
@@ -128,7 +128,7 @@ SOCKET gsockConnectSocket(const char* address, const char* port, int socktype, i
     return ConnectSocket;
 }
 
-SOCKET gsockListenSocket(SOCKET sock, const char* port, int family, int socktype, int protocol)
+SOCKET gsockListenSocket(const char* port, int family, int socktype, int protocol)
 {
     //a
 }
