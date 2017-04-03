@@ -23,6 +23,20 @@
 
 #endif // __linux__ || __WIN32
 
+#define GSOCK_DEFAULT_BUFLEN 1500
+
+/*! The socket data structure
+ *  - Encapsulates a socket, a buffer of an initial size of GSOCK_DEFAULT_BUFLEN, and flags. 
+ *  - Use for more convenience when transferring a buffer of each socket.
+ */
+typedef struct
+{
+    SOCKET sock;
+    char dataBuff[GSOCK_DEFAULT_BUFLEN];
+    char flags;
+    short checksum;
+} GSOCKSocketStruct;
+
 int gsockGetLastError();
 int gsockInitSocks();
 int gsockErrorCleanup(SOCKET sock, struct addrinfo* addrin, const char* msg, char cleanupEverything, int retval);

@@ -74,12 +74,41 @@ void dataThreadRunner(void* param)
     FTPDataFormatInfo* formInfo = (FTPDataFormatInfo*)param;
 }
 
-// The command interpreter
-
-int executeCommand(SOCKET sock, const char* command, FTPClientState* state)
+/*! The command interpreter
+ *  - Command - C-String buffer to send (with a CRLF at the end).
+ *  - Result in respondbuf
+ *  Retval:
+ *  - Fatal technical err: <0 (Need to exit a program)
+ *  - If >0, then server response code.
+ */
+int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz)
 {
-    //a
-    return -1;
+    // Send the command
+    if(send(sock, command, strlen(command), 0) < 0){
+        hlogf("Error sending a message.\n");
+        return -2;
+    }
+    int iRes = 0;
+    // Now receive the Response
+    while(1){
+        iRes = recv(sock, respondbuf, respbufsiz, 0);
+        if( iRes < 0 ){
+            hlogf("Error receiving  a response.\n");
+            return -2;
+        }
+        if( iRes == 0 ){
+            hlogf("recv returned 0 - FIN.\n");
+            return -1;
+        }
+        // iRes > 0 = size of buffer.
+        if( respondbuf[0] != '1') // If '1', signal that processing, expect another response.
+            break;
+    }
+    // Parse the response, and null-terminate it.
+    respondbuf[iRes] = 0;
+    
+    // Return the response code as int.
+    return ( (respondbuf[0]-'0')*100 + (respondbuf[1]-'0')*10 + (respondbuf[2]-'0') );
 }
 
 /*! Authorization of the connection.
@@ -91,7 +120,7 @@ int authorizeConnection(SOCKET sock)
 {
     char recvbuf[FTP_DEFAULT_BUFLEN];
     // Get the response from s3rver. First reply - The welcome message
-    iResult = recv(ControlSocket, recvbuf, sizeof(recvbuf), 0);
+    int iResult = recv(sock, recvbuf, sizeof(recvbuf), 0);
     if(iResult < 0){
         hlogf("Error receiving welcome message.\n");
         return -2;
@@ -100,9 +129,68 @@ int authorizeConnection(SOCKET sock)
     recvbuf[iResult] = 0;
     printf("\n%s\n", recvbuf);
     
-    // Start user authorization. Straightforward, no encryption, just like the good ol' days :)
-    strcpy(recvbuf, "USER ");
-    gmisc_GetLine("Name: ", recvbuf+5, sizeof(recvbuf), stdin);
+    int attempts = 3;
+    //Authorize username and passwd with 3 attempts each.
+    // i<3: UName, i>=3:passwd
+
+    for(int i=0; i<2*attempts; i++){
+        // Start user authorization. Straightforward, no encryption, just like the good ol' days :)
+        strcpy(recvbuf, (i<attempts ? "USER " : "PASS ")); // Command
+        gmisc_GetLine((i<attempts ? "Name: " : "Password: "), recvbuf+5, sizeof(recvbuf)-7, stdin); // Get parameter from user
+        strcpy(recvbuf+strlen(recvbuf), "\r\n"); // CRLF terminator at the end
+        
+        if(sendMessageGetResponse(sock, recvbuf, recvbuf, sizeof(recvbuf)) < 0){
+            hlogf("Error on sendMessageGetResponse()\n");
+            return -3;
+        }
+        
+        //Print the response
+        printf("\n%s\n", recvbuf);
+
+        if(recvbuf[0] == '5'){ // Error happen'd
+            hlogf("Fatal error when entering username, or limit reached.Abort...\n");
+            return -1;
+        }
+
+        if(recvbuf[0]=='2' || recvbuf[0]=='3'){ //OK
+            if(i<attempts)
+                i=attempts; //Move to password
+            else
+                break; // Password auth'd, end loop.
+        }
+    }
+
+    // Now it has been authenticated.
+    return 0;
+}
+
+int executeCommand(SOCKET sock, const char* command, FTPClientState* state)
+{
+    char buff[FTP_DEFAULT_BUFLEN];
+    int retval = 0, valid = 1;
+    
+    // Form an FTP request
+    if(strcmp(command, "quit") == 0){ 
+        strcpy(buff, "QUIT\r\n");
+        retval = -1;
+    }
+    else //if command is not matching any of the above
+    {
+        valid = 0;
+    }
+    
+    
+    if(valid){ 
+        // Execute FTP request
+        if(sendMessageGetResponse(sock, buff, buff, sizeof(buff)) < 0){
+            hlogf("Error on sendMessageGetResponse()\n");
+            return -3;
+        }
+        
+        // Print response
+        printf("\n%s\n", buff);
+    }
+    return retval;
 }
 
 int __cdecl main(int argc, char **argv) 
@@ -159,7 +247,7 @@ int __cdecl main(int argc, char **argv)
     {
         gmisc_GetLine("\nftp> ", recvbuf, recvbuflen, stdin);
 
-        if( executeCommand(ControlSocket, recvbuf, &ftpCliState) < 0 ) // Error or need to close sock.
+        if( executeCommand(ControlSocket, recvbuf, &ftpCliState) < 0 ) // Error or need to quit.
             break;
     }
 
