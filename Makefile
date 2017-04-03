@@ -16,9 +16,12 @@ LIBDIR= ./lib
 INCLUDEDIR= ./include
 BINDIR= ./bin
 
+BINDIR_RELEASE= $(BINDIR)/release
+BINDIR_DEBUG= $(BINDIR)/debug
+
 #====================================#
 #set directories
-ZSH_RESULT:=$(shell mkdir -p $(OBJDIR) $(TESTDIR) $(LIBDIR) $(BINDIR) $(INCLUDEDIR))
+ZSH_RESULT:=$(shell mkdir -p $(OBJDIR) $(TESTDIR) $(LIBDIR) $(BINDIR_RELEASE) $(BINDIR_DEBUG) $(INCLUDEDIR))
 
 
 # set os-dependent libs
@@ -67,8 +70,8 @@ TESTNAME= $(TEST1) $(TEST2)
 GRYLTOOLS_HEAD= $(INCLUDEDIR)/gryltools/
 GRYLTOOLS_LIB= $(LIBDIR)/gryltools.a
 
-SERVNAME= $(BINDIR)/server
-CLINAME= $(BINDIR)/client
+SERVNAME= server
+CLINAME= client
 GRYLTOOLS= gryltools
 
 #====================================#
@@ -76,15 +79,19 @@ GRYLTOOLS= gryltools
 DEBUG_INCLUDES= -Isrc/GrylloFTP/gryltools
 RELEASE_INCLUDES= -I$(GRYLTOOLS_HEAD)
 
+BINPREFIX= 
+
 #===================================#
 
 all: debug
 
 debops: 
 	$(eval CFLAGS += $(DEBUG_CFLAGS) $(DEBUG_INCLUDES))
+	$(eval BINPREFIX = $(BINDIR_DEBUG)) 
 
 relops: 
 	$(eval CFLAGS += $(RELEASE_CFLAGS) $(RELEASE_INCLUDES)) 
+	$(eval BINPREFIX = $(BINDIR_RELEASE)) 
 
 debug: debops $(GRYLTOOLS) $(CLINAME) $(TESTNAME)
 release: relops $(GRYLTOOLS) $(CLINAME) $(TESTNAME)
@@ -105,11 +112,11 @@ $(GRYLTOOLS): $(GRYLTOOLS_LIB) $(GRYLTOOLS_HEAD)
 $(GRYLTOOLS)_debug: debops $(GRYLTOOLS)
 
 $(SERVNAME): $(SOURCES_SERVER:.c=.o) $(LIBS_SERVER)
-	$(CC) -o $@ $^ $(LDFLAGS)
+	$(CC) -o $(BINPREFIX)/$@ $^ $(LDFLAGS)
 $(SERVNAME)_debug: debops $(SERVNAME)    
 
 $(CLINAME): $(SOURCES_CLIENT:.c=.o) $(LIBS_CLIENT)
-	$(CC) -o $@ $^ $(LDFLAGS)
+	$(CC) -o $(BINPREFIX)/$@ $^ $(LDFLAGS)
 $(CLINAME)_debug: debops $(CLINAME)    
 
 #===================================#
@@ -137,4 +144,4 @@ clean:
 	$(RM) *.o */*.o */*/*.o */*/*/*.o
 
 clean_all: clean
-	$(RM) $(SERVNAME) $(CLINAME) $(GRYLTOOLS_LIB) $(TESTNAME)
+	$(RM) $(BINDIR)/*.* $(BINDIR)/*/*.* $(GRYLTOOLS_LIB) $(TESTNAME)

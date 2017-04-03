@@ -8,28 +8,7 @@
 #include <gsrvsocks.h>
 #include <grylthread.h>
 #include <hlog.h>
-#include "../gftp/gftp.h"
-
-#define MAX_DATA_THREADS 8
-
-// FTP Structs
-
-typedef struct 
-{
-    char onDataChannelSetup;
-    char waitingForCommand;
-    int numberOfDataThreads;
-} FTPClientState;
-
-typedef struct
-{
-    char dataType;      // Ascii, Image, Local, EbcDic
-    char dataFormat;    // For Ascii - NonPrint, Telnet_FormatContol, CarriageControl
-    char structure;     // File, record, page
-    char transMode;     // Stream, block, compressed.
-} FTPDataFormatInfo;
-
-static GrThreadHandle DataThreadPool[MAX_DATA_THREADS];
+#include "clientcommands.h"
 
 // Helper funcs
 
@@ -132,8 +111,8 @@ int authorizeConnection(SOCKET sock)
     int attempts = 3;
     //Authorize username and passwd with 3 attempts each.
     // i<3: UName, i>=3:passwd
-
-    for(int i=0; i<2*attempts; i++){
+    char success = 0;
+    for(int i=0; i<=2*attempts; i++){
         // Start user authorization. Straightforward, no encryption, just like the good ol' days :)
         strcpy(recvbuf, (i<attempts ? "USER " : "PASS ")); // Command
         gmisc_GetLine((i<attempts ? "Name: " : "Password: "), recvbuf+5, sizeof(recvbuf)-7, stdin); // Get parameter from user
@@ -147,8 +126,8 @@ int authorizeConnection(SOCKET sock)
         //Print the response
         printf("\n%s\n", recvbuf);
 
-        if(recvbuf[0] == '5'){ // Error happen'd
-            hlogf("Fatal error when entering username, or limit reached.Abort...\n");
+        if((recvbuf[0]=='5' || recvbuf[0]=='4') && !((i+1) % attempts)){ // Haven't authenticated for all the attempts
+            hlogf("Can't authenticate. Max attempts reached. Aborting...\n");
             return -1;
         }
 
@@ -171,14 +150,14 @@ int executeCommand(SOCKET sock, const char* command, FTPClientState* state)
     
     // Form an FTP request
     if(strcmp(command, "quit") == 0){ 
-        strcpy(buff, "QUIT\r\n");
-        retval = -1;
+        /*strcpy(buff, "QUIT\r\n");
+        retval = -1;*/
+        return -1; // Just return because at the end we must send QUIT anyway.
     }
     else //if command is not matching any of the above
     {
         valid = 0;
     }
-    
     
     if(valid){ 
         // Execute FTP request
@@ -238,20 +217,25 @@ int __cdecl main(int argc, char **argv)
     FTPClientState ftpCliState = {0};    
 
     if( authorizeConnection(ControlSocket) < 0 )
-        return gsockErrorCleanup(ControlSocket, NULL, "Error authorizing a connection!", 1, 1); 
-
-    
-    printf("Starting loop...\n");
-    char canRun = 1;
-    while(canRun)
+        hlogf("Error authorizing a connection!\n"); 
+    else // If authorization succeeded (>=0), let's start a command loop.
     {
-        gmisc_GetLine("\nftp> ", recvbuf, recvbuflen, stdin);
+        printf("Starting loop...\n");
+        while(1)
+        {
+            gmisc_GetLine("\nftp> ", recvbuf, recvbuflen, stdin);
 
-        if( executeCommand(ControlSocket, recvbuf, &ftpCliState) < 0 ) // Error or need to quit.
-            break;
+            if( executeCommand(ControlSocket, recvbuf, &ftpCliState) < 0 ) // Error or need to quit.
+                break;
+        }
+        printf("Connection closed. Exitting...\n");
     }
 
-    printf("Connection closed. Exitting...\n");
+    // Execute QUIT command - safely terminate an FTP session.
+    if(sendMessageGetResponse(ControlSocket, "QUIT\r\n", recvbuf, recvbuflen) < 0)
+        hlogf("Can't execute QUIT: Error on sendMessageGetResponse()\n");
+    else
+        printf("\n%s\n", recvbuf);
 
     // cleanup. close the socket, and terminate the Winsock.dll instance bound to our app.
     gsockCloseSocket(ControlSocket);
