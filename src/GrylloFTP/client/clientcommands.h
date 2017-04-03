@@ -8,8 +8,10 @@
 #include <gsrvsocks.h> 
 #include "../gftp/gftp.h"
 
-#define FTPUI_COMFLAG_COMPLEX  1
-#define FTPUI_COMFLAG_DATACONN 2
+#define FTPUI_COMFLAG_COMPLEX       1
+#define FTPUI_COMFLAG_HASPARAMS     2
+#define FTPUI_COMFLAG_SETTING_EDIT  4
+#define FTPUI_COMFLAG_INTERMEDIATE  8
 
 #define FTPUI_COMMAND_NAME_LENGHT 10
 #define FTP_MAX_DATA_THREADS 8
@@ -47,6 +49,7 @@ typedef struct
 {
     char flags;
     char name[ FTPUI_COMMAND_NAME_LENGHT ];
+    //char RawName[ FTP_RAWNAME_LENGHT ];
     int (*procedure)(const char* command, FTPClientState* state);
 } FTPClientUICommand; 
 
