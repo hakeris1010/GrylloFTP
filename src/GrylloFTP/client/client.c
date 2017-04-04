@@ -12,13 +12,13 @@
 
 // Command parser procedures
 
-int ftpSimpleComProc(const char* command, FTPClientState* state);
-int ftpComplexComProc(const char* command, FTPClientState* state);
-int ftpParamComProc(const char* command, FTPClientState* state);
+int ftpSimpleComProc(  struct FTPCallbackCommand, FTPClientState*);
+int ftpComplexComProc( struct FTPCallbackCommand, FTPClientState*);
+int ftpParamComProc(   struct FTPCallbackCommand, FTPClientState*);
 
 // Available command database
 
-const FTPClientUICommand ftpClientCommands[]=
+const struct FTPClientUICommand ftpClientCommands[]=
 {
     // Simple commands
     { 0, "system", 0x1F, ftpSimpleComProc},
@@ -132,34 +132,53 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
 }
 
 /*! Callback functions which execute specific type of UI command. 
- *  - Used in a Valid UI command database, and should be called from there.
+ *  Used in a Valid UI command database, and should be called from there.
+ *  Assumes that the command passed is valid.
  *  Params:
  *  - command: a command entered by user. Uses a syntax of space-separated params.
  *  - state: a ptr to state variable, containing current ControlSocket and other data. 
+ *  Retval:
+ *    < 0 - must terminate session
+ *    = 0 - good, can continue
+ *    > 0 (4, 5) - the FTP response value error number.
+ *  Also modifies state buffer:
+ *    - The response string of the server is stored in a statebuff.
  */   
 
 /*! Simple command processor. 
  *  Executes commands which are 1-request-1-reply only, without state changes.
  */
-int ftpSimpleComProc(const char* command, FTPClientState* state)
+int ftpSimpleComProc(struct FTPCallbackCommand command, FTPClientState* state)
 {
-    //a
+    hlogf("ftpSimpleComProc() called. Name:%s\n", (command.commInfo)->name);
+    GSOCKSocketStruct* ss = &(state->controlSocket);
+
+    // TODO: Check if QUIT by using flags:
+    // Introduce a new flag called "Terminator"
+    if(strcmp((command.commInfo)->name, "quit") == 0){
+        hlogf("ftpSimpleComProc(): QUIT identified.\n");
+        return -1;
+    }
+
+    return 0;
 }
 
 /*! Processes commands which consists of multiple requests and replies,
  *  and opens/closes data connections, modifies state.
  */
-int ftpComplexComProc(const char* command, FTPClientState* state)
+int ftpComplexComProc(struct FTPCallbackCommand command, FTPClientState* state)
 {
     //a
+    return 0;
 }
 
 /*! Processes commands which change the client local options
  *  For example, turns passive mode on or off.
  */
-int ftpParamComProc(const char* command, FTPClientState* state)
+int ftpParamComProc(struct FTPCallbackCommand command, FTPClientState* state)
 {
-    //a
+    // a
+    return 0;
 }
 
 
@@ -216,38 +235,114 @@ int authorizeConnection(SOCKET sock)
     return 0;
 }
 
-/*! The user-input command interpreter. 
- *  - Input: 
- *    command: a User-entered command of format:
- *    lowercase command word, space, then parameter list, separated by spaces.
- *    Example: get file1.txt       
+/*! The raw command interpreter
+ *  Just sends a raw command to a server.
+ *  Params:
+ *  - command: null-terminated standard ftp command string, with CRLF at the end.
+ *  - checkmode: sets if command is to be checked locally.
+ *  Retval:
+ *  - Standard (As below).
  */
-int executeCommand(SOCKET sock, const char* command, FTPClientState* state)
+int executeRawFtpCommand(const char* command, FTPClientState* state, char checkMode)
 {
-    char buff[FTP_DEFAULT_BUFLEN];
-    int retval = 0, valid = 1;
+    int retval=0, valid=1;
     
-    // Form an FTP request
-    if(strcmp(command, "quit") == 0){ 
-        /*strcpy(buff, "QUIT\r\n");
-        retval = -1;*/
-        return -1; // Just return because at the end we must send QUIT anyway.
-    }
-    else //if command is not matching any of the above
+    // TODO: Perform local checking if set
+
+    if(valid) // Command can be set to server.
     {
-        valid = 0;
-    }
-    
-    if(valid){ 
-        // Execute FTP request
-        if(sendMessageGetResponse(sock, buff, buff, sizeof(buff)) < 0){
+        //TODO: for Data-Connection openers, fill info and start their thread.
+
+        // Copy to the socket send buffer, and append CRLF in the end.
+        /*strncpy((state->controlSocket).dataBuff, command, GSOCK_DEFAULT_BUFLEN-3);
+        (state->controlSocket).dataBuff[GSOCK_DEFAULT_BUFLEN-3] = 0; // Null-terminate, then add CRLF in the end.
+        strcpy( (state->controlSocket).dataBuff + strlen( (state->controlSocket).dataBuff ), "\r\n" );*/ 
+
+        if( sendMessageGetResponse( (state->controlSocket).sock, command, \
+            (state->controlSocket).dataBuff, GSOCK_DEFAULT_BUFLEN ) < 0 )
+        {
             hlogf("Error on sendMessageGetResponse()\n");
             return -3;
         }
-        
-        // Print response
-        printf("\n%s\n", buff);
+
+        // Print the receive message
+        printf("\n%s\n", (state->controlSocket).dataBuff);
     }
+    return retval;
+}
+
+/*! The user-input command interpreter. 
+ *  Params:
+ *  - command (User input): 
+ *    A User-entered command: null-terminated string, which has format: 
+ *    lowercase command word, space, parameter list, separated by spaces.
+ *    Example: get file1.txt 
+ *  Retval:
+ *  - < 0 - must terminate session (fatal error occured or quit request sent)
+ *  - = 0 - function succeeded, must continue.
+ *  - > 0 - non-fatal errors, can continue. (Invalid command(1), Bad params(2), etc.)     
+ */
+int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState* state)
+{
+    if(!command && !state) return 2; // 2 - bad params.
+
+    int retval = 0; // Return 0 (good) by default.
+    int valid = 0; // Set invalid now, later if found match, change it to valid.
+    size_t comlen;
+
+    // Old legacy (maybe?)
+
+    // Check if it is a raw command (# at the beginning)
+    if( command[0]=='#' )
+    {
+        hlogf("Identified a raw command. Passing to RawProcessor.\n");
+
+        comlen = strlen(command);    
+        // Check for CRLF at the end, and set if possible
+        if(strcmp(command + comlen - 2, "\r\n") != 0){ 
+            if(comlen + 2 > comBufLen)
+                return 1; // Can't set CRLF --> bad.
+            strcpy(command + comlen, "\r\n");    
+        }
+
+        return executeRawFtpCommand(command+1, state, FTP_CHECKRAW_DEFAULT); // Call the raw command processor.
+    }
+
+    comlen = strcspn(command, gmisc_whitespaces);
+    if(comlen <= FTPUI_COMMAND_NAME_LENGHT && comlen > 0) // Len good, we can do the loop.
+    {
+        for(const struct FTPClientUICommand* cmd = ftpClientCommands; 
+            cmd < ftpClientCommands + sizeof(ftpClientCommands)/sizeof(struct FTPClientUICommand);
+            cmd++)
+        {
+            if( strncmp(command, cmd->name, comlen) == 0 ) // Found matching valid command.
+            {
+                hlogf("Identified a Valid command! Name: %s\n", cmd->name);
+
+                valid = 1;
+
+                // Setup the structure to pass to the Proc.
+                struct FTPCallbackCommand cbst = { 0 }; 
+                cbst.commInfo = cmd;
+
+                // Tokenize the command, separating params.
+                strtok(command, gmisc_whitespaces); // The name of command
+                for(int j=0; j < FTPUI_COMMAND_MAXPARAMS; j++)
+                {
+                    cbst.params[j] = strtok(NULL, gmisc_whitespaces); // After the last token, all calls return NULL.
+                }
+
+                if( cmd->procedure(cbst, state) < 0 ){ // Call the specified processing function. If < 0, must end. 
+                    hlogf("Quit signal received from a procedure. Time to quit.\n");
+                    retval = -1; // Quit sign.
+                }
+                break; // We executed a valid command, now end loop.    
+            }
+        }
+    }
+    /*if(!valid)
+        retval = 1;*/ // 1 - command invalid.
+
     return retval;
 }
 
@@ -295,7 +390,7 @@ int __cdecl main(int argc, char **argv)
 
     // The state structure    
     FTPClientState ftpCliState = {0};    
-    ftpCliState.controlSocket = ControlSocket;
+    ftpCliState.controlSocket.sock = ControlSocket;
     
     // Authorize, and start loop.
     if( authorizeConnection(ControlSocket) < 0 )
@@ -308,7 +403,7 @@ int __cdecl main(int argc, char **argv)
         {
             gmisc_GetLine("\nftp> ", recvbuf, recvbuflen, stdin);
 
-            if( executeCommand(ControlSocket, recvbuf, &ftpCliState) < 0 ) // Error or need to quit.
+            if( executeCommand(ControlSocket, recvbuf, strlen(recvbuf), &ftpCliState) < 0 ) // Error or need to quit.
                 break;
         }
         printf("Connection closed. Exitting...\n");

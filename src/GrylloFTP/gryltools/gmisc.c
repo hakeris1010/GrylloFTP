@@ -1,6 +1,8 @@
 #include "gmisc.h"
 #include <string.h>
 
+const char* gmisc_whitespaces = " \t\n\v\f\r";
+
 void gmisc_NullifyStringEnd(char* fname, size_t size, const char* delim)
 {
     if(!fname || size<=0) return;

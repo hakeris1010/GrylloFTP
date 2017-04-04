@@ -14,7 +14,11 @@
 #define FTPUI_COMFLAG_INTERMEDIATE  8
 
 #define FTPUI_COMMAND_NAME_LENGHT 10
+#define FTPUI_COMMAND_MAXPARAMS 5
+#define FTP_CHECKRAW_DEFAULT 0
+
 #define FTP_MAX_DATA_THREADS 8
+
 
 // FTP Structs
 
@@ -41,20 +45,31 @@ typedef struct
 
 } FTPClientState;
 
+struct FTPClientUICommand;
+
+/*! A command structure which is sent to callbacks.
+ *  Has a param string array, and a pointer to a database strucure. 
+ */
+struct FTPCallbackCommand
+{
+    char* params[ FTPUI_COMMAND_MAXPARAMS ];
+    const struct FTPClientUICommand* commInfo;
+};
+
 /*! UI Command info structure.
  *  - Contains data about command name, specific flags,
  *    and a procedure to call to process that command.
  */
-typedef struct 
+struct FTPClientUICommand
 {
     char flags;
     char name[ FTPUI_COMMAND_NAME_LENGHT ];
     char rawCommandID;
-    int (*procedure)(const char* command, FTPClientState* state);
-} FTPClientUICommand; 
+    int (*procedure)(struct FTPCallbackCommand, FTPClientState*);
+}; 
 
 /*! A database-like buffer, storing data about all the supported commands.
  */
-extern const FTPClientUICommand cftpClientCommand[];
+extern const struct FTPClientUICommand cftpClientCommand[];
 
 #endif // CLIENTCOMMANDS_H_INCLUDED
