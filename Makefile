@@ -35,7 +35,8 @@ SOURCES_SERVER= src/GrylloFTP/server/server.c \
                 src/GrylloFTP/server/service.c 
 LIBS_SERVER= $(GRYLTOOLS_LIB)
 
-SOURCES_CLIENT= src/GrylloFTP/client/client.c
+SOURCES_CLIENT= src/GrylloFTP/client/client.c \
+                src/GrylloFTP/gftp/gftp.c
 LIBS_CLIENT= $(GRYLTOOLS_LIB)
 
 SOURCES_GRYLTOOLS = src/GrylloFTP/gryltools/grylthread.c \

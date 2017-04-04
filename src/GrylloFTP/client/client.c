@@ -10,7 +10,40 @@
 #include <hlog.h>
 #include "clientcommands.h"
 
+// Command parser procedures
+
+int ftpSimpleComProc(const char* command, FTPClientState* state);
+int ftpComplexComProc(const char* command, FTPClientState* state);
+int ftpParamComProc(const char* command, FTPClientState* state);
+
+// Available command database
+
+const FTPClientUICommand ftpClientCommands[]=
+{
+    // Simple commands
+    { 0, "system", 0x1F, ftpSimpleComProc},
+    { 0, "cdup",   0x06, ftpSimpleComProc},
+    { 0, "pwd",    0x1B, ftpSimpleComProc},
+    { 0, "shelp",  0x21, ftpSimpleComProc},
+    { 0, "abort",  0x17, ftpSimpleComProc},
+    { 0, "status", 0x20, ftpSimpleComProc},
+    { 0, "quit",   0x03, ftpSimpleComProc},
+    
+    // Complex commands (more than one raw FTP command required)
+    { 3, "get",    0x0E, ftpComplexComProc},
+    { 3, "send",   0x0F, ftpComplexComProc},
+    { 1, "dir",    0x1C, ftpComplexComProc},
+    
+    // Setting altering commands
+    { 4, "passive",   0, ftpParamComProc} 
+};
+
+
 // Helper funcs
+
+/*! Function receives data until connection is closed, and for each received buffer calls the Callbk() function.
+ *
+ */
 
 int receiveAndPerformForEachPacket( SOCKET sock, char* buff, size_t bufsize, int flags, \
                                     void (*callbk)(char*, size_t, void*), void* callbkParam )
@@ -36,6 +69,7 @@ int receiveAndPerformForEachPacket( SOCKET sock, char* buff, size_t bufsize, int
     return retval;
 }
 
+// Simple callback-format function, which can print a buffer to a specified file.
 void printBuffer(char* buff, size_t sz, void* param)
 {
     //buff[sz] = 0; // Null-terminate the bufer for printing.
@@ -44,7 +78,11 @@ void printBuffer(char* buff, size_t sz, void* param)
 }
 
 /*! The DataThread runner.
- *  Param - the structure holding all data needed for file data transfer (name, type, etc)
+ *  Thread makes a Data connection to server and executes the transfer by the 
+ *  options specified in the FTPDataFormatInfo* structure.
+ *  Param:
+ *  - Pointer to a FTPDataFormatInfo structure,
+ *    holding all data needed for file data transfer (name, type, etc)
  */
 void dataThreadRunner(void* param)
 {
@@ -53,8 +91,11 @@ void dataThreadRunner(void* param)
     FTPDataFormatInfo* formInfo = (FTPDataFormatInfo*)param;
 }
 
-/*! The command interpreter
- *  - Command - C-String buffer to send (with a CRLF at the end).
+/*! FTP request-response handler.
+ *  Sends a client request, and returns server response.
+ *  By FTP conventions, 1 packet each.
+ *  Params:
+ *  - Command - fully ready C-String buffer to send (with a CRLF at the end).
  *  - Result in respondbuf
  *  Retval:
  *  - Fatal technical err: <0 (Need to exit a program)
@@ -89,6 +130,38 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
     // Return the response code as int.
     return ( (respondbuf[0]-'0')*100 + (respondbuf[1]-'0')*10 + (respondbuf[2]-'0') );
 }
+
+/*! Callback functions which execute specific type of UI command. 
+ *  - Used in a Valid UI command database, and should be called from there.
+ *  Params:
+ *  - command: a command entered by user. Uses a syntax of space-separated params.
+ *  - state: a ptr to state variable, containing current ControlSocket and other data. 
+ */   
+
+/*! Simple command processor. 
+ *  Executes commands which are 1-request-1-reply only, without state changes.
+ */
+int ftpSimpleComProc(const char* command, FTPClientState* state)
+{
+    //a
+}
+
+/*! Processes commands which consists of multiple requests and replies,
+ *  and opens/closes data connections, modifies state.
+ */
+int ftpComplexComProc(const char* command, FTPClientState* state)
+{
+    //a
+}
+
+/*! Processes commands which change the client local options
+ *  For example, turns passive mode on or off.
+ */
+int ftpParamComProc(const char* command, FTPClientState* state)
+{
+    //a
+}
+
 
 /*! Authorization of the connection.
  *  - Called just after initializing a connection.
@@ -143,6 +216,12 @@ int authorizeConnection(SOCKET sock)
     return 0;
 }
 
+/*! The user-input command interpreter. 
+ *  - Input: 
+ *    command: a User-entered command of format:
+ *    lowercase command word, space, then parameter list, separated by spaces.
+ *    Example: get file1.txt       
+ */
 int executeCommand(SOCKET sock, const char* command, FTPClientState* state)
 {
     char buff[FTP_DEFAULT_BUFLEN];
@@ -187,7 +266,8 @@ int __cdecl main(int argc, char **argv)
     // Activate the logger
     hlogSetActive(1);
 
-    // Validate the parameters
+    //------------- Validate the parameters --------------//
+
     if ((argc==2 ? strcmp(argv[1], "--help")==0 : 0) || argc<3) {
         printf("usage: %s server-name server-port [remote-command] [local-filename]\n \
         \nIf local-filename is set, command output will be redirected to the filename", basename(argv[0]));
@@ -215,9 +295,12 @@ int __cdecl main(int argc, char **argv)
 
     // The state structure    
     FTPClientState ftpCliState = {0};    
-
+    ftpCliState.controlSocket = ControlSocket;
+    
+    // Authorize, and start loop.
     if( authorizeConnection(ControlSocket) < 0 )
         hlogf("Error authorizing a connection!\n"); 
+    
     else // If authorization succeeded (>=0), let's start a command loop.
     {
         printf("Starting loop...\n");

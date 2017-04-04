@@ -1,7 +1,7 @@
 #ifndef CLIENTCOMMANDS_H_INCLUDED
 #define CLIENTCOMMANDS_H_INCLUDED
 
-/*! The client side UI command database.
+/*! The client side structures.
  *
  */
 
@@ -49,7 +49,7 @@ typedef struct
 {
     char flags;
     char name[ FTPUI_COMMAND_NAME_LENGHT ];
-    //char RawName[ FTP_RAWNAME_LENGHT ];
+    char rawCommandID;
     int (*procedure)(const char* command, FTPClientState* state);
 } FTPClientUICommand; 
 
