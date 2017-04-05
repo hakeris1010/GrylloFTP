@@ -69,3 +69,70 @@
 	"gsrvsocks.h"
 	"service.h"
 
+1491428041 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\client\client.c
+	<stdlib.h>
+	<stdio.h>
+	<libgen.h>
+	<gmisc.h>
+	<gsrvsocks.h>
+	<grylthread.h>
+	<hlog.h>
+	"clientcommands.h"
+
+1491426410 c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gryltools\gmisc.h
+	<stdio.h>
+	<stdlib.h>
+
+1491164858 c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gryltools\gsrvsocks.h
+	<winsock2.h>
+	<windows.h>
+	<ws2tcpip.h>
+	<unistd.h>
+	<arpa/inet.h>
+	<sys/types.h>
+	<sys/socket.h>
+	<netinet/in.h>
+	<sys/time.h>
+	<errno.h>
+
+1490697950 c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gryltools\grylthread.h
+
+1491065348 c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gryltools\hlog.h
+	<stdio.h>
+	<stdlib.h>
+
+1491426984 c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\client\clientcommands.h
+	<gsrvsocks.h>
+	"../gftp/gftp.h"
+
+1491404826 c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gftp\gftp.h
+
+1491404826 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gftp\gftp.c
+	"gftp.h"
+	<string.h>
+
+1491428805 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gryltools\gmisc.c
+	"gmisc.h"
+	<string.h>
+	<ctype.h>
+
+1491080110 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gryltools\grylthread.c
+	"grylthread.h"
+	"windows.h"
+	<sys/types.h>
+	<sys/wait.h>
+	<unistd.h>
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+
+1491160275 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gryltools\gsrvsocks.c
+	"gsrvsocks.h"
+	"hlog.h"
+	<stdio.h>
+	<stdlib.h>
+
+1491065372 source:c:\users\kestutis\documents\codeblocks projects\filesender\src\grylloftp\gryltools\hlog.c
+	"hlog.h"
+	<stdarg.h>
+

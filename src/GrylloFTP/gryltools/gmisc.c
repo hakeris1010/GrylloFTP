@@ -45,7 +45,7 @@ int gmisc_GetLine(const char *prmpt, char *buff, size_t sz, FILE* file ) {
     return GMISC_GETLINE_OK;
 }
 
-void gmisc_CStringToLower(char* str, size_t size) // If size==0, until '\0' 
+void gmisc_CStringToLower(char* str, size_t size) // If size==0, until '\0'
 {
     size = (size==0 ? strlen(str) : size);
     for(size_t i=0; i<size; i++){
@@ -55,9 +55,9 @@ void gmisc_CStringToLower(char* str, size_t size) // If size==0, until '\0'
 
 void gmisc_strnSubst(char* str, size_t sz, const char* targets, char subst)
 {
-    for(char* i = str; i!=0; i++)
+    for(char* i = str; *i!=0; i++)
     {
-        for(const char* j = targets; j!=0; j++){
+        for(const char* j = targets; *j!=0; j++){
             if(*i == *j){
                 *i = subst;
                 break;

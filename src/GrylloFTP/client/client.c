@@ -28,14 +28,14 @@ const struct FTPClientUICommand ftpClientCommands[]=
     { 0, "abort",  0x17, ftpSimpleComProc},
     { 0, "status", 0x20, ftpSimpleComProc},
     { 0, "quit",   0x03, ftpSimpleComProc},
-    
+
     // Complex commands (more than one raw FTP command required)
     { 3, "get",    0x0E, ftpDataConComProc},
     { 3, "send",   0x0F, ftpDataConComProc},
     { 1, "dir",    0x1C, ftpDataConComProc},
-    
+
     // Setting altering commands
-    { 4, "passive",   0, ftpParamComProc} 
+    { 4, "passive",   0, ftpParamComProc}
 };
 
 /*! Default ClientState value setter.
@@ -91,9 +91,9 @@ void printBuffer(char* buff, size_t sz, void* param)
 }
 
 /*! The Data-connection thread procedures.
- *  Thread makes a Data connection to server and executes the transfer by the 
+ *  Thread makes a Data connection to server and executes the transfer by the
  *  options specified in the FTPDataFormatInfo* structure.
- *  
+ *
  *  There are currently sending and receiving procedures defined.
  *
  *  Param:
@@ -109,11 +109,11 @@ void ftpThreadRunner_receive(void* param)
 
     hlogf("formInfo->ipAddr: %s, port: %d\nPassive mode: %s\n", formInfo->ipAddr,
             formInfo->port, (formInfo->passiveOn ? "on" : "off"));
-    
+
     // Do work here.
 
     hlogf("Freeing formInfo.\n");
-    FTP_freeDataFormInfo(formInfo);
+    //FTP_freeDataFormInfo(formInfo);
     free(formInfo);
 
     hlogf("ftpThreadRunner_receive(): end\n* - * - * - * - * - * - *\n");
@@ -128,11 +128,11 @@ void ftpThreadRunner_send(void* param)
 
     hlogf("formInfo->ipAddr: %s, port: %d\nPassive mode: %s\n", formInfo->ipAddr,
             formInfo->port, (formInfo->passiveOn ? "on" : "off"));
-    
+
     // Do work here.
 
     hlogf("Freeing formInfo.\n");
-    FTP_freeDataFormInfo(formInfo);
+    //FTP_freeDataFormInfo(formInfo);
     free(formInfo);
 
     hlogf("ftpThreadRunner_send(): end\n* - * - * - * - * - * - *\n");
@@ -149,7 +149,7 @@ void ftpThreadRunner_send(void* param)
  */
 #define FTOOL_RECVRESP_PRINTBUFFER  1
 #define FTOOL_RECVRESP_NOSEND       2
-#define FTOOL_RECVRESP_NORECEIVE    4 
+#define FTOOL_RECVRESP_NORECEIVE    4
 
 int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz, char flags)
 {
@@ -159,7 +159,7 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
     int lastRespCode = 0;
     //Set the timeout
     struct timeval tv;
-    
+
     hlogf("\nsendMessageGetResponse(): start\n");
 
     if(! (flags & FTOOL_RECVRESP_NOSEND))
@@ -168,7 +168,7 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
 
         tv.tv_sec = 1; // Wait 1 second until it's possible to send
         tv.tv_usec = 0;
-        
+
         FD_ZERO(&writeSet);
         FD_SET(sock, &writeSet);
 
@@ -181,9 +181,9 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
             hlogf("Its's unavailable to send data on this socket!\n");
             return 0;
         }
-        
+
         if(FD_ISSET(sock, &writeSet)) // There's data for reading on this sock.
-        {  
+        {
             hlogf("FD's are OK for sending. Trying to send...\n");
 
             // Send the command
@@ -196,14 +196,14 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
     }
 
     if(! (flags & FTOOL_RECVRESP_NORECEIVE))
-    {    
+    {
         hlogf("\nReceive flag is set. Checking FD's for receiving.\n");
 
         // Now receive the Response
         while(1){
             tv.tv_sec = 1; // Wait 1 second until request arrives
             tv.tv_usec = 0;
-            
+
             FD_ZERO(&readSet);
             FD_SET(sock, &readSet); // Add this socket to a set of socks checked for readability
 
@@ -216,9 +216,9 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
                 hlogf("Timeout: No more readable data on sockets!\n");
                 return lastRespCode;
             }
-            
+
             if(FD_ISSET(sock, &readSet)) // There's data for reading on this sock.
-            {    
+            {
                 hlogf("Data is available for receiving on this socket.\n");
 
                 iRes = recv(sock, respondbuf, respbufsiz, 0);
@@ -232,13 +232,13 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
                 }
                 // iRes > 0 = size of buffer.
                 hlogf("Received bytes: %d\n", iRes);
-               
+
                 // Parse the response, and null-terminate it.
                 respondbuf[iRes] = 0;
 
                 if(flags & FTOOL_RECVRESP_PRINTBUFFER)
-                    printf("\n%s\n", respondbuf); 
-                
+                    printf("\n%s\n", respondbuf);
+
                 // Return the response code as int.
                 lastRespCode = ( (respondbuf[0]-'0')*100 + (respondbuf[1]-'0')*10 + (respondbuf[2]-'0') );
                 lastRespCode = (lastRespCode<0 ? 0 : lastRespCode);
@@ -249,21 +249,21 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
     return lastRespCode;
 }
 
-/*! Callback functions which execute specific type of UI command. 
+/*! Callback functions which execute specific type of UI command.
  *  Used in a Valid UI command database, and should be called from there.
  *  Assumes that the command passed is valid.
  *  Params:
  *  - command: a command entered by user. Uses a syntax of space-separated params.
- *  - state: a ptr to state variable, containing current ControlSocket and other data. 
+ *  - state: a ptr to state variable, containing current ControlSocket and other data.
  *  Retval:
  *    < 0 - must terminate session
  *    = 0 - good, can continue
  *    > 0 (4, 5) - the FTP response value error number.
  *  Also modifies state buffer:
  *    - The response string of the server is stored in a statebuff.
- */   
+ */
 
-/*! Simple command processor. 
+/*! Simple command processor.
  *  Executes commands which are 1-request-1-reply only, without state changes.
  *  Can be with params.
  */
@@ -271,7 +271,7 @@ int ftpSimpleComProc(struct FTPCallbackCommand command, FTPClientState* state)
 {
     hlogf("ftpSimpleComProc() called. Name:%s\n", (command.commInfo)->name);
     GSOCKSocketStruct* ss = &(state->controlSocket);
-    
+
     // Check for terminating commands.
     if(strcmp((command.commInfo)->name, "quit") == 0){
         hlogf("ftpSimpleComProc(): QUIT identified.\n");
@@ -287,9 +287,9 @@ int ftpSimpleComProc(struct FTPCallbackCommand command, FTPClientState* state)
         curlen = strlen(*str);
         if(totallen+curlen+1 > GSOCK_DEFAULT_BUFLEN-2) // Buffer is too small
             break;
-        strcat( (state->controlSocket).dataBuff, " ");    
-        strcat( (state->controlSocket).dataBuff, *str);    
-        
+        strcat( (state->controlSocket).dataBuff, " ");
+        strcat( (state->controlSocket).dataBuff, *str);
+
         totallen += curlen+1;
     }
     // And add CRLF at the end.
@@ -322,8 +322,8 @@ void FTP_freeDataFormInfo(FTPDataFormatInfo* info)
 int ftpDataConProc_checkError(int iResult, char* dataBuf, FTPDataFormatInfo* formInfo, const char* infoErr)
 {
     // Check if technical error occured or if server returned an error code.
-    if(iResult < 0 ? 1 : (dataBuf ? (dataBuf[0]=='4' || dataBuf[0]=='5') : 0) ){ 
-        hlogf( (iResult<0 ? "Technical FATAL Error on function() : \"%s\"\n" : 
+    if(iResult < 0 ? 1 : (dataBuf ? (dataBuf[0]=='4' || dataBuf[0]=='5') : 0) ){
+        hlogf( (iResult<0 ? "Technical FATAL Error on function() : \"%s\"\n" :
                             "Error on \"%s\": Server returned error response. Aborting.\n"),
                infoErr );
         if(formInfo)
@@ -361,11 +361,12 @@ int ftpExtractIpPortPasv( char** ip, short* port, const char* dataBuf, char exte
     }
     if(!start || !end || sepCount!=5 || ((int)(end-start) < 12)) // Invalid format.
         return -1;
-    
+
     // Copy the ip in the buffer to the specified one.
     *ip = (char*) malloc((size_t)(ipEnd-start)+1);
     strncpy(*ip, start, (size_t)(ipEnd-start));
-    
+    *(*ip + (size_t)(ipEnd-start)) = 0;
+
     gmisc_strSubst(*ip, ",", '.'); // Change the separators into dots.
 
     // Now work with port.
@@ -376,7 +377,7 @@ int ftpExtractIpPortPasv( char** ip, short* port, const char* dataBuf, char exte
     }
     if(n1 > 255 || n2 > 255)
         return -3;
-    
+
     //*port = (short)n1 * 256 + (short)n2;
     *port = ( (((unsigned char)n1) << 8) | (unsigned char)n2 );
 
@@ -389,7 +390,7 @@ int ftpExtractIpPortPasv( char** ip, short* port, const char* dataBuf, char exte
 int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
 {
     hlogf("ftpDataConComProc() called. Name:%s\n", (command.commInfo)->name);
-    
+
     //Allocate a dynanic FTPDataFormatInfo structure, because it will be passed to thread.
     FTPDataFormatInfo* formInfo = (FTPDataFormatInfo*) calloc( sizeof(FTPDataFormatInfo), 1 );
     if(!formInfo){ //Calloc failed
@@ -403,18 +404,18 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
     int iRes, filenameParam=0 ;
 
     hlogf("Setting individual parameters for command...\n");
-    
+
     // Determine the individual params for each command.
     if(strcmp(cname, "get")==0){
-        threadProc = ftpThreadRunner_receive; 
+        threadProc = ftpThreadRunner_receive;
         filenameParam = 0; // Indicate which command parameter contains a filename to be passed.
     }
     else if(strcmp(cname, "dir")==0){
-        threadProc = ftpThreadRunner_receive; 
+        threadProc = ftpThreadRunner_receive;
         formInfo->outFile = stdout; // Just set the output file directly.
-    } 
+    }
     else if(strcmp(cname, "send")==0){
-        threadProc = ftpThreadRunner_send; 
+        threadProc = ftpThreadRunner_send;
         filenameParam = 0;
     }
 
@@ -431,15 +432,15 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
     }
 
     hlogf("Starting a format negotiation with the server...\n");
-    
-    // Starting the transfer options negotiations. 
+
+    // Starting the transfer options negotiations.
     // Check for data transfer options in State. If zero, skip.
-     
+
     // Data type and format (TYPE x y)
     if(state->defDataType){
-        hlogf("Negotiating Data Type-format: %c %c\n", state->defDataType, 
+        hlogf("Negotiating Data Type-format: %c %c\n", state->defDataType,
                 (state->defDataFormat ? state->defDataFormat : ' ') );
-        snprintf( dataBuf, GSOCK_DEFAULT_BUFLEN, "TYPE %c %c\r\n", state->defDataType, 
+        snprintf( dataBuf, GSOCK_DEFAULT_BUFLEN, "TYPE %c %c\r\n", state->defDataType,
             (state->defDataType != 'I' ? (state->defDataFormat ? state->defDataFormat : 'N') : ' ') );
 
         // Execute request, and check for errors, performing cleanup if needed.
@@ -451,11 +452,11 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
         formInfo->dataType = state->defDataType;
         formInfo->dataFormat = state->defDataFormat;
     }
-    
+
     // Transmission mode (MODE x)
     if(state->defTransMode){
         hlogf("Negotiating TransMode: %c\n", state->defTransMode);
-        snprintf( dataBuf, GSOCK_DEFAULT_BUFLEN, "MODE %c\r\n", state->defTransMode ); 
+        snprintf( dataBuf, GSOCK_DEFAULT_BUFLEN, "MODE %c\r\n", state->defTransMode );
 
         // Execute request, and check for errors, performing cleanup if needed.
         if( (iRes = ftpDataConProc_checkError(
@@ -465,11 +466,11 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
 
         formInfo->transMode = state->defTransMode;
     }
-    
+
     // Structure (STRU x)
     if(state->defStructure){
         hlogf("Negotiating structure: %c\n", state->defStructure);
-        snprintf( dataBuf, GSOCK_DEFAULT_BUFLEN, "STRU %c\r\n", state->defStructure ); 
+        snprintf( dataBuf, GSOCK_DEFAULT_BUFLEN, "STRU %c\r\n", state->defStructure );
 
         // Execute request, and check for errors, performing cleanup if needed.
         if( (iRes = ftpDataConProc_checkError(
@@ -483,7 +484,7 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
     //TODO: implement PORT mode
     //By now we just set to PASv implicitly
     state->passiveModeOn = 1;
-    
+
     // Set the passive option in formInfo
     formInfo->passiveOn = state->passiveModeOn;
 
@@ -494,9 +495,9 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
                 sendMessageGetResponse((state->controlSocket).sock, "PASV\r\n", dataBuf, GSOCK_DEFAULT_BUFLEN, 1),
                 dataBuf, formInfo, "setting passive mode" )) != 0 )
             return iRes;
-        
+
         // Set IP and port in a structure and check for errors at the same time.
-        if( (iRes = ftpDataConProc_checkError( 
+        if( (iRes = ftpDataConProc_checkError(
                 ftpExtractIpPortPasv( &(formInfo->ipAddr), &(formInfo->port), dataBuf, 0),
                 NULL, formInfo, "Can't extract IP and port from PASV response." )) != 0 )
             return 2;
@@ -550,13 +551,13 @@ int authorizeConnection(SOCKET sock)
     char recvbuf[FTP_DEFAULT_BUFLEN];
 
     // Get the response from s3rver. First reply - The welcome message
-    int iResult = sendMessageGetResponse(sock, recvbuf, recvbuf, sizeof(recvbuf), 
+    int iResult = sendMessageGetResponse(sock, recvbuf, recvbuf, sizeof(recvbuf),
                    FTOOL_RECVRESP_PRINTBUFFER | FTOOL_RECVRESP_NOSEND );
     if(iResult < 0){
         hlogf("Error on sendMessageGetResponse() while receiving welcome message.\n");
         return -2;
     }
-    
+
     int attempts = 3;
     //Authorize username and passwd with 3 attempts each.
     // i<3: UName, i>=3:passwd
@@ -566,12 +567,12 @@ int authorizeConnection(SOCKET sock)
         strcpy(recvbuf, (i<attempts ? "USER " : "PASS ")); // Command
         gmisc_GetLine((i<attempts ? "Name: " : "Password: "), recvbuf+5, sizeof(recvbuf)-7, stdin); // Get parameter from user
         strcpy(recvbuf+strlen(recvbuf), "\r\n"); // CRLF terminator at the end
-        
+
         if(sendMessageGetResponse(sock, recvbuf, recvbuf, sizeof(recvbuf), 1) < 0){
             hlogf("Error on sendMessageGetResponse()\n");
             return -3;
         }
-        
+
         //Print the response
         //printf("\n%s\n", recvbuf);
 
@@ -603,7 +604,7 @@ int authorizeConnection(SOCKET sock)
 int executeRawFtpCommand(const char* command, FTPClientState* state, char checkMode)
 {
     int retval=0, valid=1;
-    
+
     // TODO: Perform local checking if set
 
     if(valid) // Command can be set to server.
@@ -613,7 +614,7 @@ int executeRawFtpCommand(const char* command, FTPClientState* state, char checkM
         // Copy to the socket send buffer, and append CRLF in the end.
         /*strncpy((state->controlSocket).dataBuff, command, GSOCK_DEFAULT_BUFLEN-3);
         (state->controlSocket).dataBuff[GSOCK_DEFAULT_BUFLEN-3] = 0; // Null-terminate, then add CRLF in the end.
-        strcpy( (state->controlSocket).dataBuff + strlen( (state->controlSocket).dataBuff ), "\r\n" );*/ 
+        strcpy( (state->controlSocket).dataBuff + strlen( (state->controlSocket).dataBuff ), "\r\n" );*/
 
         if( sendMessageGetResponse( (state->controlSocket).sock, command, \
             (state->controlSocket).dataBuff, GSOCK_DEFAULT_BUFLEN, 1 ) < 0 )
@@ -628,16 +629,16 @@ int executeRawFtpCommand(const char* command, FTPClientState* state, char checkM
     return retval;
 }
 
-/*! The user-input command interpreter. 
+/*! The user-input command interpreter.
  *  Params:
- *  - command (User input): 
- *    A User-entered command: null-terminated string, which has format: 
+ *  - command (User input):
+ *    A User-entered command: null-terminated string, which has format:
  *    lowercase command word, space, parameter list, separated by spaces.
- *    Example: get file1.txt 
+ *    Example: get file1.txt
  *  Retval:
  *  - < 0 - must terminate session (fatal error occured or quit request sent)
  *  - = 0 - function succeeded, must continue.
- *  - > 0 - non-fatal errors, can continue. (Invalid command(1), Bad params(2), etc.)     
+ *  - > 0 - non-fatal errors, can continue. (Invalid command(1), Bad params(2), etc.)
  */
 int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState* state)
 {
@@ -654,16 +655,16 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
     {
         hlogf("Identified a raw command. Passing to RawProcessor.\n");
 
-        comlen = strlen(command);    
+        comlen = strlen(command);
         // Check for CRLF at the end, and set if possible
-        if(strcmp(command + comlen - 2, "\r\n") != 0){ 
+        if(strcmp(command + comlen - 2, "\r\n") != 0){
             if(comlen + 2 > comBufLen)
                 return 1; // Can't set CRLF --> bad.
-            strcpy(command + comlen, "\r\n");    
+            strcpy(command + comlen, "\r\n");
         }
 
         retval = executeRawFtpCommand(command+1, state, FTP_CHECKRAW_DEFAULT); // Call the raw command processor.
-        
+
         hlogf("\nEnded command processing.\n-----------------------------------\n\n");
         return retval;
     }
@@ -674,7 +675,7 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
 
     if(comlen <= FTPUI_COMMAND_NAME_LENGHT && comlen > 0) // Len good, we can do the loop.
     {
-        for(const struct FTPClientUICommand* cmd = ftpClientCommands; 
+        for(const struct FTPClientUICommand* cmd = ftpClientCommands;
             cmd < ftpClientCommands + sizeof(ftpClientCommands)/sizeof(struct FTPClientUICommand);
             cmd++)
         {
@@ -685,7 +686,7 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
                 valid = 1;
 
                 // Setup the structure to pass to the Proc.
-                struct FTPCallbackCommand cbst = { 0 }; 
+                struct FTPCallbackCommand cbst = { 0 };
                 cbst.commInfo = cmd;
 
                 // Tokenize the command, separating params.
@@ -697,11 +698,11 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
                         hlogf("Found a param: %s\n", cbst.params[j]);
                 }
 
-                if( cmd->procedure(cbst, state) < 0 ){ // Call the specified processing function. If < 0, must end. 
+                if( cmd->procedure(cbst, state) < 0 ){ // Call the specified processing function. If < 0, must end.
                     hlogf("Quit signal received from a procedure. Time to quit.\n");
                     retval = -1; // Quit sign.
                 }
-                break; // We executed a valid command, now end loop.    
+                break; // We executed a valid command, now end loop.
             }
         }
     }
@@ -713,7 +714,7 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
     return retval;
 }
 
-int __cdecl main(int argc, char **argv) 
+int __cdecl main(int argc, char **argv)
 {
     SOCKET ControlSocket = INVALID_SOCKET;
 
@@ -722,9 +723,9 @@ int __cdecl main(int argc, char **argv)
 
     char recvbuf[FTP_DEFAULT_BUFLEN];
     size_t recvbuflen = sizeof(recvbuf);
-    int iResult, 
+    int iResult,
         oneCommand = 0;
-    
+
     // Activate the logger
     hlogSetFile("grylogz.log", HLOG_MODE_UNBUFFERED);
     hlogSetActive(1);
@@ -737,7 +738,7 @@ int __cdecl main(int argc, char **argv)
         return 1;
     }
 
-    //--------------- Connect to a SeRVeR ----------------//    
+    //--------------- Connect to a SeRVeR ----------------//
 
     printf("Will connect to a server \"%s\" on port %s\n\nInit WinSock...", argv[1], argv[2]);
 
@@ -747,30 +748,30 @@ int __cdecl main(int argc, char **argv)
         printf("gsockInitSocks() failed with error: %d\n", iResult);
         return 1;
     }
-    
+
     printf("Done.\nNow trying to connect.\n");
-    
+
     ControlSocket = gsockConnectSocket(argv[1], argv[2], SOCK_STREAM, IPPROTO_TCP);
     if(ControlSocket == INVALID_SOCKET)
-        return gsockErrorCleanup(0, NULL, "Can't connect to a madafakkin' server....", 1, 1); 
-    
+        return gsockErrorCleanup(0, NULL, "Can't connect to a madafakkin' server....", 1, 1);
+
     /*hlogf("Setting the socket to NonBlocking");
     if(fnctl(ControlSocket, F_SETFL, O_NONBLOCK))
-        return gsockErrorCleanup(ControlSocket, NULL, "Can't make a socket non-blocking!", 1, 1); 
+        return gsockErrorCleanup(ControlSocket, NULL, "Can't make a socket non-blocking!", 1, 1);
     */
 
-    //---------------   Start a SessioN  ----------------// 
+    //---------------   Start a SessioN  ----------------//
 
-    // The state structure    
-    FTPClientState ftpCliState = {0};    
+    // The state structure
+    FTPClientState ftpCliState = {0};
     //FTP_setDefaultClientState( &ftpCliState );
 
     ftpCliState.controlSocket.sock = ControlSocket;
-    
+
     // Authorize, and start loop.
     if( authorizeConnection(ControlSocket) < 0 )
-        hlogf("Error authorizing a connection!\n"); 
-    
+        hlogf("Error authorizing a connection!\n");
+
     else // If authorization succeeded (>=0), let's start a command loop.
     {
         printf("Starting loop...\n");
