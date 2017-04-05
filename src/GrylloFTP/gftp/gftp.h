@@ -69,7 +69,8 @@ struct GFTPCommandInfo
 
 extern const struct GFTPCommandInfo FTP_RawCommandDatabase[];
 
-#define CRLF "\r\n"
-
+/*! Function gets the string name of raw command by ID.
+ */
+const char* FTP_getRawNameFromID(char id); 
 
 #endif //GFTP_H_INCLUDED

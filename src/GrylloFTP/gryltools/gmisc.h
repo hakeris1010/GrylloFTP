@@ -12,6 +12,6 @@ extern const char* gmisc_whitespaces;
 
 int gmisc_GetLine( const char *prmpt, char *buff, size_t sz, FILE* file );
 void gmisc_NullifyStringEnd(char* str, size_t size, const char* delim);
-int gmisc_CStringToLower(char* str); 
+void gmisc_CStringToLower(char* str, size_t size); // If size==0, until '\0' 
 
 #endif // GMISC_H_INCLUDED

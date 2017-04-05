@@ -42,13 +42,15 @@ const struct FTPClientUICommand ftpClientCommands[]=
 // Helper funcs
 
 /*! Function receives data until connection is closed, and for each received buffer calls the Callbk() function.
- *
+ *  TODO: Select-based stuff.
  */
 
 int receiveAndPerformForEachPacket( SOCKET sock, char* buff, size_t bufsize, int flags, \
                                     void (*callbk)(char*, size_t, void*), void* callbkParam )
 {
     int iRes, retval = 0;
+    FD_SET readSet; // We'll use SELECT to check if something is inside the buffer.
+
     do {
         iRes = recv(sock, buff, bufsize, flags);
 
@@ -101,34 +103,104 @@ void dataThreadRunner(void* param)
  *  - Fatal technical err: <0 (Need to exit a program)
  *  - If >0, then server response code.
  */
-int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz)
+#define FTOOL_RECVRESP_PRINTBUFFER  1
+#define FTOOL_RECVRESP_NOSEND         2
+#define FTOOL_RECVRESP_NORECEIVE      4 
+
+int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz, char flags)
 {
-    // Send the command
-    if(send(sock, command, strlen(command), 0) < 0){
-        hlogf("Error sending a message.\n");
-        return -2;
-    }
+    fd_set readSet;
+    fd_set writeSet;
     int iRes = 0;
-    // Now receive the Response
-    while(1){
-        iRes = recv(sock, respondbuf, respbufsiz, 0);
-        if( iRes < 0 ){
-            hlogf("Error receiving  a response.\n");
-            return -2;
-        }
-        if( iRes == 0 ){
-            hlogf("recv returned 0 - FIN.\n");
+    int lastRespCode = 0;
+    //Set the timeout
+    struct timeval tv;
+    
+    hlogf("\nsendMessageGetResponse(): start\n");
+
+    if(! (flags & FTOOL_RECVRESP_NOSEND))
+    {
+        hlogf("Checking FD's for sending.\n");
+
+        tv.tv_sec = 1; // Wait 1 second until it's possible to send
+        tv.tv_usec = 0;
+        
+        FD_ZERO(&writeSet);
+        FD_SET(sock, &writeSet);
+
+        iRes = select(0, NULL, &writeSet, NULL, &tv);
+        if(iRes == SOCKET_ERROR){
+            hlogf("SELECT returned error when SENDing.\n");
             return -1;
         }
-        // iRes > 0 = size of buffer.
-        if( respondbuf[0] != '1') // If '1', signal that processing, expect another response.
-            break;
+        else if(iRes == 0){
+            hlogf("Its's unavailable to send data on this socket!\n");
+            return 0;
+        }
+        
+        if(FD_ISSET(sock, &writeSet)) // There's data for reading on this sock.
+        {  
+            hlogf("FD's are OK for sending. Trying to send...\n");
+
+            // Send the command
+            if(send(sock, command, strlen(command), 0) < 0){
+                hlogf("Error sending a message.\n");
+                return -2;
+            }
+        }
     }
-    // Parse the response, and null-terminate it.
-    respondbuf[iRes] = 0;
-    
-    // Return the response code as int.
-    return ( (respondbuf[0]-'0')*100 + (respondbuf[1]-'0')*10 + (respondbuf[2]-'0') );
+
+    if(! (flags & FTOOL_RECVRESP_NORECEIVE))
+    {    
+        hlogf("Checking FD's for receiving.\n");
+
+        // Now receive the Response
+        while(1){
+            tv.tv_sec = 1; // Wait 1 second until request arrives
+            tv.tv_usec = 0;
+            
+            FD_ZERO(&readSet);
+            FD_SET(sock, &readSet); // Add this socket to a set of socks checked for readability
+
+            iRes = select(0, &readSet, NULL, NULL, &tv); // Return - no.of socks available for reading/writing.
+            if(iRes == SOCKET_ERROR){
+                hlogf("SELECT returned error.\n");
+                return -1;
+            }
+            else if(iRes == 0){
+                hlogf("No data on sockets!\n");
+                return lastRespCode;
+            }
+            
+            if(FD_ISSET(sock, &readSet)) // There's data for reading on this sock.
+            {    
+                hlogf("Data is available for receiving on this socket.\n");
+
+                iRes = recv(sock, respondbuf, respbufsiz, 0);
+                if( iRes < 0 ){
+                    hlogf("Error receiving  a response.\n");
+                    return -2;
+                }
+                if( iRes == 0 ){
+                    hlogf("recv returned 0 - FIN.\n");
+                    return -1;
+                }
+                // iRes > 0 = size of buffer.
+               
+                // Parse the response, and null-terminate it.
+                respondbuf[iRes] = 0;
+
+                if(flags & FTOOL_RECVRESP_PRINTBUFFER)
+                    printf("\n%s\n", respondbuf); 
+                
+                // Return the response code as int.
+                lastRespCode = ( (respondbuf[0]-'0')*100 + (respondbuf[1]-'0')*10 + (respondbuf[2]-'0') );
+                lastRespCode = (lastRespCode<0 ? 0 : lastRespCode);
+            }
+        }
+    }
+
+    return lastRespCode;
 }
 
 /*! Callback functions which execute specific type of UI command. 
@@ -147,19 +219,43 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
 
 /*! Simple command processor. 
  *  Executes commands which are 1-request-1-reply only, without state changes.
+ *  Can be with params.
  */
 int ftpSimpleComProc(struct FTPCallbackCommand command, FTPClientState* state)
 {
     hlogf("ftpSimpleComProc() called. Name:%s\n", (command.commInfo)->name);
     GSOCKSocketStruct* ss = &(state->controlSocket);
-
-    // TODO: Check if QUIT by using flags:
-    // Introduce a new flag called "Terminator"
+    
+    // Check for terminating commands.
     if(strcmp((command.commInfo)->name, "quit") == 0){
         hlogf("ftpSimpleComProc(): QUIT identified.\n");
         return -1;
     }
 
+    size_t curlen, totallen = strlen((command.commInfo)->name) + 1;
+    // Create the command string. Append RawName and params.
+    strcpy( (state->controlSocket).dataBuff, FTP_getRawNameFromID( (command.commInfo)->rawCommandID ) );
+
+    for(char** str=command.params; str < command.params + sizeof(command.params)/sizeof(char*); str++){
+        if(!*str) break;
+        curlen = strlen(*str);
+        if(totallen+curlen+1 > GSOCK_DEFAULT_BUFLEN-2) // Buffer is too small
+            break;
+        strcat( (state->controlSocket).dataBuff, " ");    
+        strcat( (state->controlSocket).dataBuff, *str);    
+        
+        totallen += curlen+1;
+    }
+    // And add CRLF at the end.
+    strcat( (state->controlSocket).dataBuff, "\r\n");
+
+    //Execute that command.
+    if(sendMessageGetResponse((state->controlSocket).sock, (state->controlSocket).dataBuff,
+       (state->controlSocket).dataBuff, GSOCK_DEFAULT_BUFLEN, 1 ) < 0)
+    {
+        hlogf("Error on sendMessageGetResponse()\n");
+        return -3;
+    }
     return 0;
 }
 
@@ -210,13 +306,13 @@ int authorizeConnection(SOCKET sock)
         gmisc_GetLine((i<attempts ? "Name: " : "Password: "), recvbuf+5, sizeof(recvbuf)-7, stdin); // Get parameter from user
         strcpy(recvbuf+strlen(recvbuf), "\r\n"); // CRLF terminator at the end
         
-        if(sendMessageGetResponse(sock, recvbuf, recvbuf, sizeof(recvbuf)) < 0){
+        if(sendMessageGetResponse(sock, recvbuf, recvbuf, sizeof(recvbuf), 1) < 0){
             hlogf("Error on sendMessageGetResponse()\n");
             return -3;
         }
         
         //Print the response
-        printf("\n%s\n", recvbuf);
+        //printf("\n%s\n", recvbuf);
 
         if((recvbuf[0]=='5' || recvbuf[0]=='4') && !((i+1) % attempts)){ // Haven't authenticated for all the attempts
             hlogf("Can't authenticate. Max attempts reached. Aborting...\n");
@@ -259,14 +355,14 @@ int executeRawFtpCommand(const char* command, FTPClientState* state, char checkM
         strcpy( (state->controlSocket).dataBuff + strlen( (state->controlSocket).dataBuff ), "\r\n" );*/ 
 
         if( sendMessageGetResponse( (state->controlSocket).sock, command, \
-            (state->controlSocket).dataBuff, GSOCK_DEFAULT_BUFLEN ) < 0 )
+            (state->controlSocket).dataBuff, GSOCK_DEFAULT_BUFLEN, 1 ) < 0 )
         {
             hlogf("Error on sendMessageGetResponse()\n");
             return -3;
         }
 
         // Print the receive message
-        printf("\n%s\n", (state->controlSocket).dataBuff);
+        //printf("\n%s\n", (state->controlSocket).dataBuff);
     }
     return retval;
 }
@@ -309,6 +405,9 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
     }
 
     comlen = strcspn(command, gmisc_whitespaces);
+    //Lowercase-ify the command name
+    gmisc_CStringToLower(command, comlen);
+
     if(comlen <= FTPUI_COMMAND_NAME_LENGHT && comlen > 0) // Len good, we can do the loop.
     {
         for(const struct FTPClientUICommand* cmd = ftpClientCommands; 
@@ -359,6 +458,7 @@ int __cdecl main(int argc, char **argv)
         oneCommand = 0;
     
     // Activate the logger
+    hlogSetFile("grylogz.log", HLOG_MODE_UNBUFFERED);
     hlogSetActive(1);
 
     //------------- Validate the parameters --------------//
@@ -386,6 +486,11 @@ int __cdecl main(int argc, char **argv)
     if(ControlSocket == INVALID_SOCKET)
         return gsockErrorCleanup(0, NULL, "Can't connect to a madafakkin' server....", 1, 1); 
     
+    /*hlogf("Setting the socket to NonBlocking");
+    if(fnctl(ControlSocket, F_SETFL, O_NONBLOCK))
+        return gsockErrorCleanup(ControlSocket, NULL, "Can't make a socket non-blocking!", 1, 1); 
+    */
+
     //---------------   Start a SessioN  ----------------// 
 
     // The state structure    
@@ -403,17 +508,14 @@ int __cdecl main(int argc, char **argv)
         {
             gmisc_GetLine("\nftp> ", recvbuf, recvbuflen, stdin);
 
-            if( executeCommand(ControlSocket, recvbuf, strlen(recvbuf), &ftpCliState) < 0 ) // Error or need to quit.
+            if( executeCommand(ControlSocket, recvbuf, recvbuflen, &ftpCliState) < 0 ) // Error or need to quit.
                 break;
         }
         printf("Connection closed. Exitting...\n");
     }
 
     // Execute QUIT command - safely terminate an FTP session.
-    if(sendMessageGetResponse(ControlSocket, "QUIT\r\n", recvbuf, recvbuflen) < 0)
-        hlogf("Can't execute QUIT: Error on sendMessageGetResponse()\n");
-    else
-        printf("\n%s\n", recvbuf);
+    sendMessageGetResponse(ControlSocket, "QUIT\r\n", recvbuf, recvbuflen, 1);
 
     // cleanup. close the socket, and terminate the Winsock.dll instance bound to our app.
     gsockCloseSocket(ControlSocket);

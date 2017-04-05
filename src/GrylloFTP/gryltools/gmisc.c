@@ -1,5 +1,6 @@
 #include "gmisc.h"
 #include <string.h>
+#include <ctype.h>
 
 const char* gmisc_whitespaces = " \t\n\v\f\r";
 
@@ -42,6 +43,14 @@ int gmisc_GetLine(const char *prmpt, char *buff, size_t sz, FILE* file ) {
     // Otherwise remove newline and give string back to caller.
     buff[strlen(buff)-1] = '\0';
     return GMISC_GETLINE_OK;
+}
+
+void gmisc_CStringToLower(char* str, size_t size) // If size==0, until '\0' 
+{
+    size = (size==0 ? strlen(str) : size);
+    for(size_t i=0; i<size; i++){
+        str[i] = tolower(str[i]);
+    }
 }
 
 

@@ -60,3 +60,6 @@ Temporary Items
 #*.obj
 build/obj/
 obj/
+
+# Logfiles
+*.log

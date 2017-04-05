@@ -1,4 +1,5 @@
 #include "gftp.h"
+#include <string.h>
 
 /*! Here is defined the Raw Command Database, with IDs and flags.
  *
@@ -46,3 +47,14 @@ const struct GFTPCommandInfo FTP_RawCommandDatabase[] =
     {0x21, 4, "HELP"}
 };
 
+const char* FTP_getRawNameFromID(char id)
+{
+    for(const struct GFTPCommandInfo* cmd = FTP_RawCommandDatabase; 
+        cmd < FTP_RawCommandDatabase + sizeof(FTP_RawCommandDatabase)/sizeof(struct GFTPCommandInfo);
+        cmd++)
+    {
+        if((char)id == cmd->id)
+            return cmd->comString;
+    }
+    return NULL;
+}
