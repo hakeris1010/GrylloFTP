@@ -120,7 +120,7 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
 
     if(! (flags & FTOOL_RECVRESP_NOSEND))
     {
-        hlogf("Checking FD's for sending.\n");
+        hlogf("Send flag is set. Data to send:\n%s\nChecking FD's for sending.\n", command);
 
         tv.tv_sec = 1; // Wait 1 second until it's possible to send
         tv.tv_usec = 0;
@@ -143,16 +143,17 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
             hlogf("FD's are OK for sending. Trying to send...\n");
 
             // Send the command
-            if(send(sock, command, strlen(command), 0) < 0){
+            if((iRes = send(sock, command, strlen(command), 0)) < 0){
                 hlogf("Error sending a message.\n");
                 return -2;
             }
+            hlogf("Bytes sent: %d\n", iRes);
         }
     }
 
     if(! (flags & FTOOL_RECVRESP_NORECEIVE))
     {    
-        hlogf("Checking FD's for receiving.\n");
+        hlogf("\nReceive flag is set. Checking FD's for receiving.\n");
 
         // Now receive the Response
         while(1){
@@ -168,7 +169,7 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
                 return -1;
             }
             else if(iRes == 0){
-                hlogf("No data on sockets!\n");
+                hlogf("Timeout: No more readable data on sockets!\n");
                 return lastRespCode;
             }
             
@@ -186,6 +187,7 @@ int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, s
                     return -1;
                 }
                 // iRes > 0 = size of buffer.
+                hlogf("Received bytes: %d\n", iRes);
                
                 // Parse the response, and null-terminate it.
                 respondbuf[iRes] = 0;
@@ -286,10 +288,12 @@ int ftpParamComProc(struct FTPCallbackCommand command, FTPClientState* state)
 int authorizeConnection(SOCKET sock)
 {
     char recvbuf[FTP_DEFAULT_BUFLEN];
+
     // Get the response from s3rver. First reply - The welcome message
-    int iResult = recv(sock, recvbuf, sizeof(recvbuf), 0);
+    int iResult = sendMessageGetResponse(sock, recvbuf, recvbuf, sizeof(recvbuf), 
+                   FTOOL_RECVRESP_PRINTBUFFER | FTOOL_RECVRESP_NOSEND );
     if(iResult < 0){
-        hlogf("Error receiving welcome message.\n");
+        hlogf("Error on sendMessageGetResponse() while receiving welcome message.\n");
         return -2;
     }
     // Print the message
@@ -386,7 +390,7 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
     int valid = 0; // Set invalid now, later if found match, change it to valid.
     size_t comlen;
 
-    // Old legacy (maybe?)
+    hlogf("\n-----------------------------------\nProcessing a new command.\n");
 
     // Check if it is a raw command (# at the beginning)
     if( command[0]=='#' )
@@ -401,7 +405,10 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
             strcpy(command + comlen, "\r\n");    
         }
 
-        return executeRawFtpCommand(command+1, state, FTP_CHECKRAW_DEFAULT); // Call the raw command processor.
+        retval = executeRawFtpCommand(command+1, state, FTP_CHECKRAW_DEFAULT); // Call the raw command processor.
+        
+        hlogf("\nEnded command processing.\n-----------------------------------\n\n");
+        return retval;
     }
 
     comlen = strcspn(command, gmisc_whitespaces);
@@ -439,9 +446,9 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
             }
         }
     }
-    /*if(!valid)
-        retval = 1;*/ // 1 - command invalid.
-
+    if(!valid)
+        printf("Command is invalid!\n"); // retval=1 - command invalid.
+    hlogf("\nEnded command processing.\n-----------------------------------\n");
     return retval;
 }
 
