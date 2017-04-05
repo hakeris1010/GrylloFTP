@@ -53,4 +53,25 @@ void gmisc_CStringToLower(char* str, size_t size) // If size==0, until '\0'
     }
 }
 
+void gmisc_strnSubst(char* str, size_t sz, const char* targets, char subst)
+{
+    for(char* i = str; i!=0; i++)
+    {
+        for(const char* j = targets; j!=0; j++){
+            if(*i == *j){
+                *i = subst;
+                break;
+            }
+        }
+
+        if(sz && i-str >= sz-1)
+            break;
+    }
+}
+
+void gmisc_strSubst(char* str, const char* targets, char subst)
+{
+    gmisc_strnSubst(str, 0, targets, subst);
+}
+
 

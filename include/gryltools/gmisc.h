@@ -13,5 +13,7 @@ extern const char* gmisc_whitespaces;
 int gmisc_GetLine( const char *prmpt, char *buff, size_t sz, FILE* file );
 void gmisc_NullifyStringEnd(char* str, size_t size, const char* delim);
 void gmisc_CStringToLower(char* str, size_t size); // If size==0, until '\0' 
+void gmisc_strnSubst(char* str, size_t sz, const char* targets, char subst);
+void gmisc_strSubst(char* str, const char* targets, char subst);
 
 #endif // GMISC_H_INCLUDED

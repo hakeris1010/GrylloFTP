@@ -21,7 +21,9 @@
 
 
 // FTP Structs
-
+/*! The structure to be passed to the Data Thread. 
+ *  Holds all data needed to initiate data transfer
+ */ 
 typedef struct
 {
     char dataType;      // Ascii, Image, Local, EbcDic
@@ -29,19 +31,30 @@ typedef struct
     char structure;     // File, record, page
     char transMode;     // Stream, block, compressed.
 
-    char connectionMode; // PASV or PORT
-    char* ipAddr;
+    char passiveOn; // PASV or PORT
+    char* ipAddr;   // Must be free'd
     short port;
+
+    FILE* outFile;  // Maybe closed, if has been opened.
+    char* fname;    // Muse be free'd
 } FTPDataFormatInfo;
 
+/*! Client state structure.
+ *  Holds current control socket, Data threads, and options.
+ *  If option value is 0, don't use it (or use default).
+ */ 
 typedef struct 
 {
     GSOCKSocketStruct controlSocket;
 
-    char onDataChannelSetup;
-    char waitingForCommand;
-
     GrThreadHandle DataThreadPool[FTP_MAX_DATA_THREADS];
+    
+    // Options.
+    char passiveModeOn;
+    char defDataFormat; 
+    char defDataType;
+    char defTransMode;
+    char defStructure;
 
 } FTPClientState;
 
@@ -71,5 +84,8 @@ struct FTPClientUICommand
 /*! A database-like buffer, storing data about all the supported commands.
  */
 extern const struct FTPClientUICommand cftpClientCommand[];
+
+void FTP_freeDataFormInfo(FTPDataFormatInfo* info);
+int ftpExtractIpPortPasv( char** ip, short* port, const char* dataBuf, char extended );
 
 #endif // CLIENTCOMMANDS_H_INCLUDED
