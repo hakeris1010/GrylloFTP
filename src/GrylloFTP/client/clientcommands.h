@@ -86,6 +86,7 @@ struct FTPClientUICommand
 extern const struct FTPClientUICommand cftpClientCommand[];
 
 void FTP_freeDataFormInfo(FTPDataFormatInfo* info);
+void FTP_printDataFormInfo(const FTPDataFormatInfo* fi, FILE* outFile);
 int ftpExtractIpPortPasv( char** ip, short* port, const char* dataBuf, char extended );
 
 #endif // CLIENTCOMMANDS_H_INCLUDED
