@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define GMISC_GETLINE_OK       0
 #define GMISC_GETLINE_NO_INPUT 1

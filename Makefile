@@ -11,7 +11,7 @@ DEBUG_CFLAGS= -g
 RELEASE_CFLAGS= -O2
 
 OBJDIR= ./build/obj
-TESTDIR= ./test
+TESTDIR= ./bin/test
 LIBDIR= ./lib
 INCLUDEDIR= ./include
 BINDIR= ./bin
@@ -27,6 +27,8 @@ ZSH_RESULT:=$(shell mkdir -p $(OBJDIR) $(TESTDIR) $(LIBDIR) $(BINDIR_RELEASE) $(
 # set os-dependent libs
 ifeq ($(OS),Windows_NT)
     LDFLAGS += -lWs2_32
+else
+    CFLAGS += -std=gnu99 	
 endif
 
 #====================================#

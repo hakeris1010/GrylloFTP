@@ -61,5 +61,8 @@ Temporary Items
 build/obj/
 obj/
 
+# Binary dirs
+bin/
+
 # Logfiles
 *.log

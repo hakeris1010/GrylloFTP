@@ -608,9 +608,9 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
     int threadError = 0;
     for(int i = 0; i<FTP_MAX_DATA_THREADS; i++)
     {
-        if(!isThreadRunning( state->DataThreadPool[i] )){
+        if(!gthread_isThreadRunning( state->DataThreadPool[i] )){
             // Crete a new thread in this position and check if error occured.
-            if( ! (state->DataThreadPool[i] = procToThread( threadProc, (void*)formInfo )) )
+            if( ! (state->DataThreadPool[i] = gthread_procToThread( threadProc, (void*)formInfo )) )
                 threadError = 1;
             hlogf("[main thread]: Successfully spawned thread, in position %d\n", i);   
             break;
@@ -809,7 +809,7 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
     return retval;
 }
 
-int __cdecl main(int argc, char **argv)
+int main(int argc, char **argv)
 {
     SOCKET ControlSocket = INVALID_SOCKET;
 

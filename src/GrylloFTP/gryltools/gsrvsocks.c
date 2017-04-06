@@ -109,7 +109,7 @@ SOCKET gsockConnectSocket(const char* address, const char* port, int socktype, i
         // This makes the TCP/UDP SYN handshake.
         iResult = connect( ConnectSocket, ptr->ai_addr, (int)ptr->ai_addrlen);
         if (iResult == SOCKET_ERROR) {
-            closesocket(ConnectSocket);
+            gsockCloseSocket(ConnectSocket);
             ConnectSocket = INVALID_SOCKET;
             continue; // If can't connect, close sock, and Resume to the next entity.
         }

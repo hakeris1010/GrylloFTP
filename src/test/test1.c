@@ -10,7 +10,8 @@ void doShit(void* paramz0r)
     char* str0ng = (char*)(paramz0r+2*sizeof(int));
 
     for(int i=0; i < count; i++){
-        printf("LoopNo: %d | Id: %d | %s\n", i, id, str0ng);
+        //printf("LoopNo: %d | Id: %d | %s\n", i, id, str0ng);
+	printf("%d ", id);
     }
 }
 
@@ -25,23 +26,27 @@ void printThread(void* param)
 
 int main(int argc, char** argv)
 {
-    char data1[32] = "\0\0\0\0\0\0\0\0NyaaNyaa :3\0";
-    *((int*)data1)     =   1; // Thread Id
-    *((int*)(data1+4)) = 10; // Number of loop iterations.
+    int loops = 100;
 
-    GrThreadHandle h1 = procToThread(doShit, &data1);
+    char data1[32] = "\0\0\0\0\0\0\0\0NyaaNyaa :3\0";
+    *((int*)data1)     = 1; // Thread Id
+    *((int*)(data1+4)) = loops; // Number of loop iterations.
+
+    GrThreadHandle h1 = gthread_procToThread(doShit, &data1);
 //aaaaa
     char data2[32] = "\0\0\0\0\0\0\0\0Kawaii~~ :3\0";
-    *((int*)data2)     =   2; // Thread Id
-    *((int*)(data2+4)) = 10; // Number of loop iterations.
-    GrThreadHandle h2 = procToThread(doShit, &data2);
+    *((int*)data2)     = 2; // Thread Id
+    *((int*)(data2+4)) = loops; // Number of loop iterations.
+    GrThreadHandle h2 = gthread_procToThread(doShit, &data2);
     
-    for(int i=0; i<10; i++)
-        printf(" I am very cute :3 \n");
+    for(int i=0; i<loops; i++){
+        //printf(" I am very cute :3 \n");
+	printf("m ");
+    }
     
     //sleep(10000);
-    joinThread(h1);
-    joinThread(h2);
+    gthread_joinThread(h1);
+    gthread_joinThread(h2);
 
     return 0;
 }

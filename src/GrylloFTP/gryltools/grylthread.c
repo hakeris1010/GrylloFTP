@@ -6,6 +6,8 @@
     #include <sys/types.h>
     #include <sys/wait.h>
     #include <unistd.h>
+    #include <errno.h>
+    #include <signal.h>
 #endif
 
 #include <stdio.h>
@@ -70,9 +72,10 @@ DWORD WINAPI ThreadProc( LPVOID lpParameter )
 }
 #endif
 
-GrThreadHandle procToThread(void (*proc)(void*), void* param)
+GrThreadHandle gthread_procToThread(void (*proc)(void*), void* param)
 {
     struct ThreadHandlePriv* thread_id = NULL;
+    // OS-specific code
     #if defined __WIN32
         struct ThreadFuncAttribs* attr = malloc( sizeof(struct ThreadFuncAttribs) );
 		attr->proc = proc;
@@ -97,10 +100,14 @@ GrThreadHandle procToThread(void (*proc)(void*), void* param)
             thread_id->pid = pid;
         }
     #endif
+    // Set the "active" flag on thread.	
+    if(thread_id) // No error
+    	thread_id->flags |= GRYLTHREAD_FLAG_ACTIVE;	
+
     return (GrThreadHandle)thread_id;
 }
 
-void sleep(unsigned int millisecs)
+void gthread_sleep(unsigned int millisecs)
 {
     #if defined __WIN32
         Sleep(millisecs);
@@ -109,10 +116,10 @@ void sleep(unsigned int millisecs)
     #endif
 }
 
-void joinThread(GrThreadHandle hnd)
+void gthread_joinThread(GrThreadHandle hnd)
 {
     if(!hnd) return;
-    if(isThreadRunning(hnd))
+    if(gthread_isThreadRunning(hnd))
     {
         #if defined __WIN32
             WaitForSingleObject( ((struct ThreadHandlePriv*)hnd)->hThread, INFINITE );
@@ -124,21 +131,29 @@ void joinThread(GrThreadHandle hnd)
     free( (struct ThreadHandlePriv*)hnd );
 }
 
-char isThreadRunning(GrThreadHandle hnd)
+char gthread_isThreadRunning(GrThreadHandle hnd)
 {
     if(!hnd) return 0;
+    struct ThreadHandlePriv* phnd = (struct ThreadHandlePriv*)hnd;
+    if(! (phnd->flags & GRYLTHREAD_FLAG_ACTIVE)) // Active flag is not set.
+        return 0;
+
     #if defined __WIN32
         DWORD status;
-        if( GetExitCodeThread( ((struct ThreadHandlePriv*)hnd)->hThread, &status ) ){
+        if( GetExitCodeThread( phnd->hThread, &status ) ){
             if(status == STILL_ACTIVE)
                 return 1; // Still running!
+            // Not running
+	    phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
         }
     #elif defined __linux__
         // Here we use kill (send signal to process), with signal as 0 - don't send, just check process state.
         // Error occured, now check if process doesn't exist.
         if( kill( ((struct ThreadHandlePriv*)hnd)->pid, 0 ) < 0 ){ 
-            if(errno == ESRCH) // Process doesn't exist.
+            if(errno == ESRCH){ // Process doesn't exist.
+	    	phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
                 return 0; // Not running.
+	    }
         }
         return 1; // Thread running.
     #endif

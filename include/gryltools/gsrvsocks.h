@@ -12,6 +12,7 @@
     #include <arpa/inet.h>  //close
     #include <sys/types.h>
     #include <sys/socket.h>
+    #include <netdb.h>
     #include <netinet/in.h>
     #include <sys/time.h>   //FD_SET, FD_ISSET, FD_ZERO macros
     #include <errno.h>
@@ -19,7 +20,7 @@
     #define INVALID_SOCKET -1
     #define SOCKET_ERROR   -1
     
-    typedef int SOCKET
+    typedef int SOCKET;
 
 #endif // __linux__ || __WIN32
 

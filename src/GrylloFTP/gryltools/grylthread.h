@@ -3,10 +3,10 @@
 
 typedef void *GrThreadHandle;
 
-GrThreadHandle procToThread(void (*proc)(void*), void* param);
-void joinThread(GrThreadHandle hnd);
-char isThreadRunning(GrThreadHandle hnd);
+GrThreadHandle gthread_procToThread(void (*proc)(void*), void* param);
+void gthread_joinThread(GrThreadHandle hnd);
+char gthread_isThreadRunning(GrThreadHandle hnd);
 
-void sleep(unsigned int millisecs);
+void gthread_sleep(unsigned int millisecs);
 
 #endif //GRYLTHREAD_H_INCLUDED
