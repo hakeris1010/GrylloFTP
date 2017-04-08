@@ -39,6 +39,26 @@ typedef struct
     char* fname;    // Muse be free'd
 } FTPDataFormatInfo;
 
+/*! The thread state structure
+ *  - This struct will be used by Data Thread to communicate with the Main THread.
+ *  - Mutexes will be used to sync the access.
+ */
+typedef struct
+{
+    volatile short flags;
+    //GrMutex mut; 
+} FTPDataThreadState;
+
+/*! Thread structure, contains state and raw handle
+ *  - Must be kept alive for all thread's working time, 
+ *    because thread itself will modify the state.
+ */ 
+typedef struct
+{
+    GrThreadHandle thrHand;
+    FTPDataThreadState state;
+} FTPDataThread;
+
 /*! Client state structure.
  *  Holds current control socket, Data threads, and options.
  *  If option value is 0, don't use it (or use default).
@@ -47,7 +67,7 @@ typedef struct
 {
     GSOCKSocketStruct controlSocket;
 
-    GrThreadHandle DataThreadPool[FTP_MAX_DATA_THREADS];
+    FTPDataThread DataThreadPool[FTP_MAX_DATA_THREADS];
     
     // Options.
     char passiveModeOn;
@@ -57,6 +77,16 @@ typedef struct
     char defStructure;
 
 } FTPClientState;
+
+// TODO: This structure.
+// The data thread needs to access some state variables to lock/unlock mutexes, to signal about operations.
+typedef struct
+{
+    FTPDataFormatInfo fmt;
+    FTPDataThreadState* state;
+} FTPDataThreadParam;
+
+//+++++++++++++++++++++ Command structures ++++++++++++++++++++++//
 
 struct FTPClientUICommand;
 

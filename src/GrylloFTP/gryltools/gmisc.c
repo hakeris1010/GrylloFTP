@@ -1,6 +1,8 @@
 #include "gmisc.h"
+#include "hlog.h"
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 
 const char* gmisc_whitespaces = " \t\n\v\f\r";
 
@@ -30,9 +32,11 @@ int gmisc_GetLine(const char *prmpt, char *buff, size_t sz, FILE* file ) {
         return GMISC_GETLINE_NO_INPUT;
     }
 
+    size_t bufln = strlen(buff);
+
     // If it was too long, there'll be no newline. In that case, we flush
     // to end of line so that excess doesn't affect the next call.
-    if (buff[strlen(buff)-1] != '\n') {
+    if(buff[ bufln-1 ] != '\n') {
         buff[sz] = 0;
         extra = 0;
         while (( (ch = fgetc(file)) != '\n') && (ch != EOF))
@@ -41,7 +45,7 @@ int gmisc_GetLine(const char *prmpt, char *buff, size_t sz, FILE* file ) {
     }
 
     // Otherwise remove newline and give string back to caller.
-    buff[strlen(buff)-1] = '\0';
+    buff[ bufln-1 ] = '\0';
     return GMISC_GETLINE_OK;
 }
 
@@ -72,6 +76,22 @@ void gmisc_strnSubst(char* str, size_t sz, const char* targets, char subst)
 void gmisc_strSubst(char* str, const char* targets, char subst)
 {
     gmisc_strnSubst(str, 0, targets, subst);
+}
+
+// Print current time to a filebuf.
+void gmisc_PrintTimeByFormat(FILE* file, const char* fmt)
+{
+    time_t rawtime;
+    struct tm * timeinfo;
+    char buffer [80];
+
+    time (&rawtime);
+    timeinfo = localtime (&rawtime);
+
+    if(!strftime(buffer, 80, (fmt ? fmt : "%Y-%m-%d %H:%M:%S"), timeinfo))
+        hlogf("gmisc_PrintTimeByFormat(): format is invalid, or buffer size (%d) exceeded.\n", sizeof(buffer));
+
+    fputs(buffer, file);
 }
 
 

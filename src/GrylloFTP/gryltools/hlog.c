@@ -9,7 +9,8 @@ static char active = 1;
 FILE* hlogSetFile(const char* fname, char mode)
 {
     hlogCloseFile();
-    if( (curFile = fopen(fname, "w"))!=NULL && (mode & HLOG_MODE_UNBUFFERED) ) // check for UNBUFFERED bit
+    const char* oformat = ( (mode & HLOG_MODE_APPEND) ? "aw" : "w" ); // Set format according to mode flags
+    if( (curFile = fopen(fname, oformat)) && (mode & HLOG_MODE_UNBUFFERED) ) // check for UNBUFFERED bit
         setbuf(curFile, NULL); // Disable buffering.
     return curFile;
 }

@@ -1,6 +1,10 @@
 #ifndef GMISC_H_INCLUDED
 #define GMISC_H_INCLUDED
 
+/*! GMisc: Various useful wrappers and string manipulators.
+ *  
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,5 +20,7 @@ void gmisc_NullifyStringEnd(char* str, size_t size, const char* delim);
 void gmisc_CStringToLower(char* str, size_t size); // If size==0, until '\0' 
 void gmisc_strnSubst(char* str, size_t sz, const char* targets, char subst);
 void gmisc_strSubst(char* str, const char* targets, char subst);
+
+void gmisc_PrintTimeByFormat(FILE* file, const char* fmt);
 
 #endif // GMISC_H_INCLUDED

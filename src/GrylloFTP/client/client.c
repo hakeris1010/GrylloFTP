@@ -1,5 +1,28 @@
 
-//#define WIN32_LEAN_AND_MEAN
+/************************************************************ 
+ *                 FTP Client by GrylloTron                 *
+ *                       Version 0.1                        *
+ *            -  -  -  -  -  -  -  -  -  -  -  -            *
+ *                                                          *   
+ *  Features:                                               *
+ *  - 1980s FTP Plain text model                            *
+ *  - Working USER/PASS authentication                      *           
+ *  - All the basic commands (except Upload)                *   
+ *  - Using only NAT/Firewall-friendly Passive mode         *
+ *  - Multithreaded download/control                        *
+ *  - Efficient command-handling                            *
+ *  - Easily implementable new commands                     *
+ *  - Uses Cross-Platform GrylTools framework               *
+ *                                                          *
+ *  TODOS:                                                  *
+ *  - Synchronized Console I/O using Mutex-CondVars         *
+ *  - Support for Upload                                    *
+ *  - Support for different Data Modes                      *
+ *  - (Far future) Support for FTPS                         *
+ *                                                          *   
+ ***********************************************************/ 
+
+#define FTP_CLIENT_VERSION  "v0.1"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -59,7 +82,7 @@ void printBuffer(char* buff, size_t sz, void* param)
     //buff[sz] = 0; // Null-terminate the bufer for printing.
     hlogf("helper_printBuffer(): printing %d bytes...\n", sz);
 
-    fprintf((param ? *((FILE**)param) : stdout), "%.*s", sz, buff);
+    fwrite( buff, 1, sz, (param ? (FILE*)param : stdout));
 }
 
 
@@ -101,11 +124,11 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
 
         iRes = select(0, NULL, &writeSet, NULL, &tv);
         if(iRes == SOCKET_ERROR){
-            hlogf("SELECT returned error when SENDing.\n");
+            hlogf("SELECT returned error when SENDing.\n\n");
             return -1;
         }
         else if(iRes == 0){
-            hlogf("Its's unavailable to send data on this socket!\n");
+            hlogf("Its's unavailable to send data on this socket!\n\n");
             return 0;
         }
 
@@ -115,7 +138,7 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
 
             // Send the command
             if((iRes = send(sock, command, strlen(command), 0)) < 0){
-                hlogf("Error sending a message.\n");
+                hlogf("Error sending a message.\n\n");
                 return -2;
             }
             hlogf("Bytes sent: %d\n", iRes);
@@ -124,7 +147,7 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
 
     if(! (flags & FTOOL_RECVRESP_NORECEIVE))
     {
-        hlogf("\nReceive flag is set. Checking FD's for receiving.\n");
+        hlogf("Receive flag is set. Checking FD's for receiving.\n");
 
         // Now receive the Response
         while(1){
@@ -136,12 +159,12 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
 
             iRes = select(0, &readSet, NULL, NULL, &tv); // Return - no.of socks available for reading/writing.
             if(iRes == SOCKET_ERROR){
-                hlogf("SELECT returned error.\n");
+                hlogf("SELECT returned error.\n\n");
                 return -1;
             }
             else if(iRes == 0){
-                hlogf("Timeout: No more readable data on sockets!\n");
-                return lastRespCode;
+                hlogf("Timeout: No more readable data on sockets!\n\n");
+                return 1;
             }
 
             if(FD_ISSET(sock, &readSet)) // There's data for reading on this sock.
@@ -150,21 +173,21 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
 
                 iRes = recv(sock, respondbuf, respbufsiz, 0);
                 if( iRes < 0 ){
-                    hlogf("Error receiving  a response.\n");
+                    hlogf("Error receiving  a response.\n\n");
                     return -2;
                 }
                 if( iRes == 0 ){
-                    hlogf("recv returned 0 - FIN.\n");
+                    hlogf("recv returned 0 - FIN.\n\n");
                     return -1;
                 }
                 // iRes > 0 = size of buffer.
                 hlogf("Received bytes: %d\n", iRes);
 
-                // Parse the response, and null-terminate it.
-                respondbuf[iRes] = 0;
-
-                if((flags & FTOOL_RECVRESP_PRINTBUFFER) && !responseBufferCallback) // No func passed, just print.
-                    printf("\n%s\n", respondbuf);
+                if((flags & FTOOL_RECVRESP_PRINTBUFFER) && !responseBufferCallback){ // No func passed, just print.
+                    // Parse the response, and null-terminate it.
+                    respondbuf[iRes] = 0;
+                    printf("%s", respondbuf);
+                }
                 else if(responseBufferCallback)
                     responseBufferCallback( respondbuf, iRes, callbackParam );
 
@@ -174,13 +197,21 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
             }
         }
     }
-
+    hlogf("\n");
     return lastRespCode;
 }
 
 int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz, char flags)
 {
-    return sendMessageGetResponse_Extended(sock, command, respondbuf, respbufsiz, flags, NULL, NULL);
+    if(flags & FTOOL_RECVRESP_PRINTBUFFER)
+        printf("\n");
+
+    int retval = sendMessageGetResponse_Extended(sock, command, respondbuf, respbufsiz, flags, NULL, NULL);
+    
+    if(flags & FTOOL_RECVRESP_PRINTBUFFER)
+        printf("\n");
+
+    return retval;
 }
 
 // Help printer
@@ -214,14 +245,11 @@ void ftpThreadRunner_receive(void* param)
     hlogf("\n* - * - * - * - * - * - *\n ftpThreadRunner_receive(): start\n");
 
     FTPDataFormatInfo* formInfo = (FTPDataFormatInfo*)param;
-
     FTP_printDataFormInfo(formInfo, hlogGetFile());
-
-    /*hlogf("formInfo->ipAddr: %s, port: %d\nPassive mode: %s\n", formInfo->ipAddr,
-            formInfo->port, (formInfo->passiveOn ? "on" : "off"));*/
-    
+        
     if(!formInfo->passiveOn){
         hlogf("Active mode is not supported. Aborting.\n");
+        FTP_freeDataFormInfo(formInfo);
         return;
     }
 
@@ -230,6 +258,7 @@ void ftpThreadRunner_receive(void* param)
 
     if(!formInfo->outFile && !formInfo->fname){
         hlogf("NO file and filename specified. Aborting data transfer.\n");
+        FTP_freeDataFormInfo(formInfo);
         return;
     }
     
@@ -239,14 +268,16 @@ void ftpThreadRunner_receive(void* param)
     SOCKET dataSocket = gsockConnectSocket(formInfo->ipAddr, port, SOCK_STREAM, IPPROTO_TCP);
     if(dataSocket == INVALID_SOCKET){
         hlogf("Can't connect to the server on Data Port! Aborting...\n");
+        FTP_freeDataFormInfo(formInfo);
         return;
     }
-    printf("Successfully connected. Creating a File.");
+    printf("Successfully connected. Creating a File: %s\n", formInfo->fname);
     
     if(formInfo->fname && !formInfo->outFile){
         if(! (formInfo->outFile = fopen(formInfo->fname, "wb"))){
             hlogf("Can't open file: %s\nAborting...\n", formInfo->fname);
             gsockCloseSocket(dataSocket);
+            FTP_freeDataFormInfo(formInfo);
             return;
         }
     }
@@ -254,23 +285,23 @@ void ftpThreadRunner_receive(void* param)
     // Allocate the buffer to which we'll receive
     char dataBuffer[GSOCK_DEFAULT_BUFLEN];
 
-    hlogf("Testing ouput file.\n");
-    fprintf(formInfo->outFile, "Testing.\n");
+    //hlogf("Testing ouput file.\n");
+    //fprintf(formInfo->outFile, "Testing.\n");
 
     // Execute the receiving and writing into buff. Specify that No sending should be done, only receiving.
     hlogf("Starting the receiving procedure.....\n");
     if( sendMessageGetResponse_Extended(dataSocket, dataBuffer, dataBuffer, sizeof(dataBuffer),
-             FTOOL_RECVRESP_NOSEND, printBuffer, (void*)&(formInfo->outFile)) < 0 ){ //Err occur'd.
+             FTOOL_RECVRESP_NOSEND, printBuffer, (void*)(formInfo->outFile) ) < 0 ){ 
          hlogf("FIN or error while sending and receiving.\n");
     }
     
     // Cleanup. Close files, sockets, and free structures.
     gsockCloseSocket(dataSocket);
 
-    fclose(formInfo->outFile);
+    //fclose(formInfo->outFile);
 
     hlogf("Freeing formInfo.\n");
-    //FTP_freeDataFormInfo(formInfo);
+    FTP_freeDataFormInfo(formInfo);
     free(formInfo);
 
     hlogf("ftpThreadRunner_receive(): end\n* - * - * - * - * - * - *\n");
@@ -379,10 +410,10 @@ int ftpSimpleComProc(struct FTPCallbackCommand command, FTPClientState* state)
 void FTP_freeDataFormInfo(FTPDataFormatInfo* info)
 {
     if(!info) return;
-    if(info->ipAddr)
+    /*if(info->ipAddr)
         free(info->ipAddr);
     if(info->fname)
-        free(info->fname);
+        free(info->fname);*/
     if(info->outFile && info->outFile!=stdout && info->outFile!=stderr && info->outFile!=stdin)
         fclose(info->outFile);
 }
@@ -437,7 +468,7 @@ int ftpExtractIpPortPasv( char** ip, short* port, const char* dataBuf, char exte
                 ipEnd = i;
         }
     }
-    if(!start || !end || sepCount!=5 || ((int)(end-start) < 12)) // Invalid format.
+    if(!start || !end || sepCount!=5 || ((int)(end-start) < 12) || ((int)(end-start) > 24)) // Invalid format.
         return -1;
 
     // Copy the ip in the buffer to the specified one.
@@ -449,12 +480,11 @@ int ftpExtractIpPortPasv( char** ip, short* port, const char* dataBuf, char exte
 
     // Now work with port.
     unsigned int n1, n2;
-    if(sscanf(ipEnd+1, "%d,%d", &n1, &n2) != 2){ // If wrong format, scanf failed to read 2 args.
+    // If wrong format, scanf failed to read 2 args, or read wrong values.
+    if( (sscanf(ipEnd+1, "%d,%d", &n1, &n2) != 2) || (n1 > 255 || n2 > 255) ){ 
         free(*ip);
         return -2;
     }
-    if(n1 > 255 || n2 > 255)
-        return -3;
 
     //*port = (short)n1 * 256 + (short)n2;
     *port = ( (((unsigned char)n1) << 8) | (unsigned char)n2 );
@@ -608,9 +638,9 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
     int threadError = 0;
     for(int i = 0; i<FTP_MAX_DATA_THREADS; i++)
     {
-        if(!gthread_isThreadRunning( state->DataThreadPool[i] )){
+        if(!gthread_isThreadRunning( (state->DataThreadPool[i]).thrHand )){
             // Crete a new thread in this position and check if error occured.
-            if( ! (state->DataThreadPool[i] = gthread_procToThread( threadProc, (void*)formInfo )) )
+            if( ! ((state->DataThreadPool[i]).thrHand = gthread_procToThread( threadProc, (void*)formInfo )) )
                 threadError = 1;
             hlogf("[main thread]: Successfully spawned thread, in position %d\n", i);   
             break;
@@ -770,6 +800,7 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
 
     if(comlen <= FTPUI_COMMAND_NAME_LENGHT && comlen > 0) // Len good, we can do the loop.
     {
+        // Iterate through all the available commands until we find a valid match
         for(const struct FTPClientUICommand* cmd = ftpClientCommands;
             cmd < ftpClientCommands + sizeof(ftpClientCommands)/sizeof(struct FTPClientUICommand);
             cmd++)
@@ -822,8 +853,13 @@ int main(int argc, char **argv)
         oneCommand = 0;
 
     // Activate the logger
-    hlogSetFile("grylogz.log", HLOG_MODE_UNBUFFERED);
+    hlogSetFile("grylogz.log", HLOG_MODE_UNBUFFERED | HLOG_MODE_APPEND);
     hlogSetActive(1);
+
+    // Print current time to a logger.
+    hlogf("\n\n===============================\nGrylloFTP %s\n> > ", FTP_CLIENT_VERSION);
+    gmisc_PrintTimeByFormat( hlogGetFile(), NULL );
+    hlogf("\n- - - - - - - - - - - - - - - - \n\n");
 
     //------------- Validate the parameters --------------//
 
@@ -850,20 +886,14 @@ int main(int argc, char **argv)
     if(ControlSocket == INVALID_SOCKET)
         return gsockErrorCleanup(0, NULL, "Can't connect to a madafakkin' server....", 1, 1);
 
-    /*hlogf("Setting the socket to NonBlocking");
-    if(fnctl(ControlSocket, F_SETFL, O_NONBLOCK))
-        return gsockErrorCleanup(ControlSocket, NULL, "Can't make a socket non-blocking!", 1, 1);
-    */
-
     //---------------   Start a SessioN  ----------------//
 
     // The state structure
     FTPClientState ftpCliState = {0};
     //FTP_setDefaultClientState( &ftpCliState );
-
     ftpCliState.controlSocket.sock = ControlSocket;
 
-    // Authorize, and start loop.
+    // Authorize this connection.
     if( authorizeConnection(ControlSocket) < 0 )
         hlogf("Error authorizing a connection!\n");
 

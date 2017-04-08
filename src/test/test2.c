@@ -19,5 +19,9 @@ int main()
     gmisc_NullifyStringEnd(kaka, 15, NULL);
     printf("|%s|\n", kaka);
 
+
+    printf("\n\nTime:\n");
+    gmisc_PrintTimeByFormat( stdout, NULL );
+
     return 0;
 }
