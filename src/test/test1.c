@@ -32,12 +32,12 @@ int main(int argc, char** argv)
     *((int*)data1)     = 1; // Thread Id
     *((int*)(data1+4)) = loops; // Number of loop iterations.
 
-    GrThreadHandle h1 = gthread_procToThread(doShit, &data1);
+    GrThread h1 = gthread_Thread_create(doShit, &data1);
 //aaaaa
     char data2[32] = "\0\0\0\0\0\0\0\0Kawaii~~ :3\0";
     *((int*)data2)     = 2; // Thread Id
     *((int*)(data2+4)) = loops; // Number of loop iterations.
-    GrThreadHandle h2 = gthread_procToThread(doShit, &data2);
+    GrThread h2 = gthread_Thread_create(doShit, &data2);
     
     for(int i=0; i<loops; i++){
         //printf(" I am very cute :3 \n");
@@ -45,8 +45,8 @@ int main(int argc, char** argv)
     }
     
     //sleep(10000);
-    gthread_joinThread(h1);
-    gthread_joinThread(h2);
+    gthread_Thread_join(h1);
+    gthread_Thread_join(h2);
 
     return 0;
 }

@@ -24,13 +24,6 @@ BINDIR_DEBUG= $(BINDIR)/debug
 ZSH_RESULT:=$(shell mkdir -p $(OBJDIR) $(TESTDIR) $(LIBDIR) $(BINDIR_RELEASE) $(BINDIR_DEBUG) $(INCLUDEDIR))
 
 
-# set os-dependent libs
-ifeq ($(OS),Windows_NT)
-    LDFLAGS += -lWs2_32
-else
-    CFLAGS += -std=gnu99 	
-endif
-
 #====================================#
 
 SOURCES_SERVER= src/GrylloFTP/server/server.c \
@@ -52,7 +45,7 @@ HEADERS_GRYLTOOLS=  src/GrylloFTP/gryltools/grylthread.h \
                     src/GrylloFTP/gryltools/gmisc.h
 LIBS_GRYLTOOLS=
 
-#====================================#
+#--------- Test sources ---------#
 
 SOURCES_TEST1=  src/test/test1.c 
 LIBS_TEST1= $(GRYLTOOLS_LIB)
@@ -62,10 +55,21 @@ SOURCES_TEST2=  src/test/test2.c
 LIBS_TEST2= $(GRYLTOOLS_LIB)
 TEST2= $(TESTDIR)/test2
 
-#-----------#
-#tests
+#---------  Test  list  ---------# 
 
 TESTNAME= $(TEST1) $(TEST2)
+
+#====================================#
+
+# set os-dependent libs
+ifeq ($(OS),Windows_NT)
+    LDFLAGS += -lkernel32 -lntdll -lWs2_32
+	#LIBS_GRYLTOOLS += Ws2_32 kernel32
+else
+    CFLAGS += -std=gnu99 	
+endif
+
+#====================================#
 
 #====================================#
 #$(addprefix $(INCLUDEDIR)/gryltools/, $(notdir HEADERS_GRYLTOOLS))    

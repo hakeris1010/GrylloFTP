@@ -638,9 +638,9 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
     int threadError = 0;
     for(int i = 0; i<FTP_MAX_DATA_THREADS; i++)
     {
-        if(!gthread_isThreadRunning( (state->DataThreadPool[i]).thrHand )){
+        if(!gthread_Thread_isRunning( (state->DataThreadPool[i]).thrHand )){
             // Crete a new thread in this position and check if error occured.
-            if( ! ((state->DataThreadPool[i]).thrHand = gthread_procToThread( threadProc, (void*)formInfo )) )
+            if( ! ((state->DataThreadPool[i]).thrHand = gthread_Thread_create( threadProc, (void*)formInfo )) )
                 threadError = 1;
             hlogf("[main thread]: Successfully spawned thread, in position %d\n", i);   
             break;

@@ -55,7 +55,7 @@ typedef struct
  */ 
 typedef struct
 {
-    GrThreadHandle thrHand;
+    GrThread thrHand;
     FTPDataThreadState state;
 } FTPDataThread;
 
