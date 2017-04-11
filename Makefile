@@ -63,7 +63,7 @@ TESTNAME= $(TEST1) $(TEST2)
 
 # set os-dependent libs
 ifeq ($(OS),Windows_NT)
-    LDFLAGS += -lkernel32 -lntdll -lWs2_32
+    LDFLAGS += -lkernel32 -lWs2_32
 	#LIBS_GRYLTOOLS += Ws2_32 kernel32
 else
     CFLAGS += -std=gnu99 	

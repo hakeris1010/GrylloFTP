@@ -1,10 +1,24 @@
 #include "grylthread.h"
 
+// Check if POSIX
+#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
+    #include <unistd.h>
+    #if defined (_POSIX_VERSION)
+        // OS is PoSiX-Compliant.
+        #define _GTHREAD_POSIX
+    #endif 
+#endif 
+
+// Include OS-specific needed headers
 #if defined __WIN32
+    // If Win32 also define the required Windows version
+    // Windows Vista (0x0600) - required for full functionality.
+    #define _WIN32_WINNT 0x0600 
+
     #include <windows.h>
     #include <WinBase.h>
-    #include <Synchapi.h>
-#elif defined __linux__
+
+#elif defined _GTHREAD_POSIX
     #include <sys/types.h>
     #include <sys/wait.h>
     #include <unistd.h>
@@ -66,7 +80,7 @@ struct ThreadHandlePriv
 {
     #if defined __WIN32
         HANDLE hThread;
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         pid_t pid;
     #endif
     char flags;
@@ -101,7 +115,7 @@ GrThread gthread_Thread_create(void (*proc)(void*), void* param)
             thread_id = malloc(sizeof(struct ThreadHandlePriv));
             thread_id->hThread = h;
         }
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         // Call fork - spawn process.
         // On a child process execution resumes after FORK,
         // For a child fork() returns 0, and for the original, returns 0 on good, < 0 on error.
@@ -126,7 +140,7 @@ void gthread_Thread_sleep(unsigned int millisecs)
 {
     #if defined __WIN32
         Sleep(millisecs);
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         sleep(millisecs);
     #endif
 }
@@ -139,7 +153,7 @@ void gthread_Thread_join(GrThread hnd)
         #if defined __WIN32
             WaitForSingleObject( ((struct ThreadHandlePriv*)hnd)->hThread, INFINITE );
             CloseHandle( ((struct ThreadHandlePriv*)hnd)->hThread ); // Close native handle (OS recomendation)
-        #elif defined __linux__
+        #elif defined _GTHREAD_POSIX
             waitpid( ((struct ThreadHandlePriv*)hnd)->pid, NULL, 0 );
         #endif
     }
@@ -162,7 +176,7 @@ char gthread_Thread_isRunning(GrThread hnd)
             // Not running
 	    phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
         }
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         // Here we use kill (send signal to process), with signal as 0 - don't send, just check process state.
         // If error occured, now check if process doesn't exist.
         if( kill( phnd->pid, 0 ) < 0 ){ 
@@ -189,7 +203,7 @@ struct GThread_MutexPriv
     #if defined __WIN32
         CRITICAL_SECTION critSect;
         HANDLE hMutex;
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         pthread_mutex_t mtx;
     #endif
     int flags;
@@ -227,7 +241,7 @@ GrMutex gthread_Mutex_init(int flags)
             InitializeCriticalSection( &(mpv->critSect) ); 
         }
         
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         res = pthread_mutex_init( &(mpv->mtx), NULL );
         if( res != 0 ){ // Error occur'd when initializing.
             hlogf("gthread: Error initializing Mutex (%d) !\n", res);
@@ -256,7 +270,7 @@ void gthread_Mutex_destroy(GrMutex* mtx)
             DeleteCriticalSection( &(mpv->critSect) ); 
         }
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         if( pthread_mutex_destroy( &(mpv->mtx) ) != 0 ){
             hlogf("gthread: pthread_mutex_destroy() failed to destroy a mutex.\n");
     #endif
@@ -283,7 +297,7 @@ char gthread_Mutex_lock(GrMutex mtx)
             EnterCriticalSection( &( ((struct GThread_MutexPriv*)mtx)->critSect ) );
         }
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         int res = pthread_mutex_lock( &( ((struct GThread_MutexPriv*)mtx)->mtx ) );
         if(res != 0){
             hlogf("gthread: Error locking mutex (%d)\n", res);
@@ -314,7 +328,7 @@ char gthread_Mutex_tryLock(GrMutex mtx)
             }
         }
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         int res = pthread_mutex_trylock( &( ((struct GThread_MutexPriv*)mtx)->mtx ) );
         if(res != 0 && res != EBUSY){
             hlogf("gthread: Error locking mutex (%d)\n", res);
@@ -348,7 +362,7 @@ char gthread_Mutex_unlock(GrMutex mtx)
             LeaveCriticalSection( &( ((struct GThread_MutexPriv*)mtx)->critSect ) );
         }
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         int res = pthread_mutex_unlock( &( ((struct GThread_MutexPriv*)mtx)->mtx ) );
         if(res != 0){
             hlogf("gthread: Error pthread_unlocking mutex (%d)\n", res);
@@ -369,7 +383,7 @@ struct GThread_CondVarPriv
 {
     #if defined __WIN32
         CONDITION_VARIABLE cond;
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         pthread_cond_t cond;
     #endif
 };
@@ -387,7 +401,7 @@ GrCondVar gthread_CondVar_init()
         // Init a condVar. The function does not fail!
         InitializeConditionVariable( &(mpv->cond) );    
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         // Init with default attributes.
         res = pthread_cond_init( &(mpv->cond), NULL );
         if( res != 0 ){ // Error occur'd when initializing.
@@ -408,10 +422,10 @@ void gthread_CondVar_destroy(GrCondVar* cond)
     #if defined __WIN32
         // On Windows, we don't need to destroy a CondVar!!!
         // DEBUG@
-        CRITICAL_SECTION crit;
-        SleepConditionVariableCS( &(mpv->cond), &crit, INFINITE );     
+        //CRITICAL_SECTION crit;
+        //SleepConditionVariableCS( &(mpv->cond), &crit, INFINITE );     
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         // Init with default attributes.
         res = pthread_cond_destroy( &(mpv->cond) );
         if( res != 0 ){ // Error occur'd when initializing.
