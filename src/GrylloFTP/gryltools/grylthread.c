@@ -421,9 +421,6 @@ void gthread_CondVar_destroy(GrCondVar* cond)
     struct GThread_CondVarPriv* mpv = (struct GThread_CondVarPriv*)(*cond);
     #if defined __WIN32
         // On Windows, we don't need to destroy a CondVar!!!
-        // DEBUG@
-        //CRITICAL_SECTION crit;
-        //SleepConditionVariableCS( &(mpv->cond), &crit, INFINITE );     
 
     #elif defined _GTHREAD_POSIX
         // Init with default attributes.
@@ -436,20 +433,85 @@ void gthread_CondVar_destroy(GrCondVar* cond)
     free( mpv );
 }
 
-char gthread_CondVar_wait(GrCondVar cond)
+char gthread_CondVar_wait_time(GrCondVar cond, GrMutex mutex, long millisec)
 {
-     
+    if(!cond || !mutex) return -2;
+    struct GThread_CondVarPriv* cvp = (struct GThread_CondVarPriv*)cond;
+    struct GThread_MutexPriv* mtp = (struct GThread_MutexPriv*)mutex;
+    #if defined __WIN32
+        if( (mtp->flags) & GTHREAD_MUTEX_SHARED ){ // Only unshared mutex can be used to wait 
+            hlogf("gthread: ERROR: CondVar can only wait on a non-shared Windows mutex (CRITICAL_SECTION)\n");
+            return -3;
+        }
+            
+        if(SleepConditionVariableCS( &(cvp->cond), &(mtp->critSect), (DWORD)millisec ) == 0)
+        {
+            DWORD error = GetLastError();
+            if(error != ERROR_TIMEOUT){ // Actual error happened.
+                hlogf("gthread: SleepConditionVariableCS() returned Error: 0x%0x\n", error);
+                return -1; // Error occur'd
+            }
+            return 1; // Timeout
+        }
+
+    #elif defined __linux__
+        struct timespec tims;
+        tims.tv_sec = millisec / 1000; // Seconds
+        tims.tv_nsec = (millisec % 1000) * 1000; // Nanoseconds
+
+        int res = pthread_cond_timedwait( &(cvp->cond), &(mtp->mtx), &tims );
+        if( res != 0 ){
+            if( res == ETIMEDOUT ) // Timeout occured.
+                return 1; // Timeout
+            hlogf("gthread: ERROR when trying to pthread_cond_timedwait() : %d\n", res);
+            return -1;
+        }
+    #endif
+    return 0; // Wait successful, variable is signaled.
 }
 
-char gthread_CondVar_notify(GrCondVar cond)
+char gthread_CondVar_wait(GrCondVar cond, GrMutex mtp)
 {
-    
+    if(!cond || !mtp) return -2;
+    #if defined __WIN32
+        return gthread_CondVar_wait_time(cond, mtp, INFINITE);
+
+    #elif defined __linux__
+        int res = pthread_cond_wait( &(cvp->cond), &(mtp->mtx) );
+        if( res != 0 ){
+            hlogf("gthread: ERROR when trying to pthread_cond_wait() : %d\n", res);
+            return -1; // Only error can occur, no timeout.
+        }
+    #endif
+    return 0; // Wait successful, variable is signaled.
+}
+
+void gthread_CondVar_notify(GrCondVar cond)
+{
+    if(!cond) return;
+    #if defined __WIN32
+        WakeConditionVariable( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
+
+    #elif defined __linux__
+        int res = pthread_cond_signal( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
+        if( res != 0 ){
+            hlogf("gthread: ERROR when trying to pthread_cond_signal() : %d\n", res);
+        }
+    #endif
 }
 
 void gthread_CondVar_notifyAll(GrCondVar cond)
 {
-    
-}
+    if(!cond) return;
+    #if defined __WIN32
+        WakeAllConditionVariable( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
 
+    #elif defined __linux__
+        int res = pthread_cond_broadcast( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
+        if( res != 0 ){
+            hlogf("gthread: ERROR when trying to pthread_cond_signal() : %d\n", res);
+        }
+    #endif
+}
 
 //end.

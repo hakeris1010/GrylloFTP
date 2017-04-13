@@ -4,21 +4,27 @@
 /************************************************************  
  *         GrylloThreads C-Multithreading Framework         *
  *                ~ ~ ~ By GrylloTron ~ ~ ~                 *
- *                       Version 0.1                        *
+ *                       Version 0.2                        *
  *        -  -  -  -  -  -  -  -  -  -  -  -  -  -  -       *      
  *                                                          *
  *  Features:                                               *
  *  - Cross-Platform concurrent execution framework         *
  *    - Currently supports POSIX and Win32                  *
- *  - Currently supported concurrency entities:             *
+ *  - Currently supported Native concurrency entities:      *
  *    - Thread                                              *
- *
+ *    - Mutex                                               * 
+ *    - Condition Variable                                  *
+ *                                                          *
  *  TODOS:
  *  - On POSIX, Ability to choose between pthreads or fork().
- *  - Mutexes and CondVars     
- *
+ *  - Extension to above, a Process_create() function.
+ *  
+ *  BUGS:
+ *  - Must check bugs on POSIX.                             
  *                                                          *
  ***********************************************************/ 
+
+#define GTHREAD_VERSION "v0.2"
 
 /*! The typedef'd primitives
  *  Implementation is defined in their respective source files.
@@ -56,8 +62,9 @@ char gthread_Mutex_unlock(GrMutex mtx);
 GrCondVar gthread_CondVar_init();
 void gthread_CondVar_destroy(GrCondVar* cond);
 
-char gthread_CondVar_wait(GrCondVar cond);
-char gthread_CondVar_notify(GrCondVar cond);
+char gthread_CondVar_wait(GrCondVar cond, GrMutex mtp);
+char gthread_CondVar_wait_time(GrCondVar cond, GrMutex mtp, long millisec);
+void gthread_CondVar_notify(GrCondVar cond);
 void gthread_CondVar_notifyAll(GrCondVar cond);
 
 

@@ -56,8 +56,9 @@ char gthread_Mutex_unlock(GrMutex mtx);
 GrCondVar gthread_CondVar_init();
 void gthread_CondVar_destroy(GrCondVar* cond);
 
-char gthread_CondVar_wait(GrCondVar cond);
-char gthread_CondVar_notify(GrCondVar cond);
+char gthread_CondVar_wait(GrCondVar cond, GrMutex mtp);
+char gthread_CondVar_wait_time(GrCondVar cond, GrMutex mtp, long millisec);
+void gthread_CondVar_notify(GrCondVar cond);
 void gthread_CondVar_notifyAll(GrCondVar cond);
 
 
