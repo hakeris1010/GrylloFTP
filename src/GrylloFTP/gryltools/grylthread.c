@@ -1,16 +1,8 @@
 #include "grylthread.h"
-
-// Check if POSIX
-#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
-    #include <unistd.h>
-    #if defined (_POSIX_VERSION)
-        // OS is PoSiX-Compliant.
-        #define _GTHREAD_POSIX
-    #endif 
-#endif 
+#include "systemcheck.h"
 
 // Include OS-specific needed headers
-#if defined __WIN32
+#if defined _GRYLTOOL_WIN32
     // If Win32 also define the required Windows version
     // Windows Vista (0x0600) - required for full functionality.
     #define _WIN32_WINNT 0x0600 
@@ -18,7 +10,7 @@
     #include <windows.h>
     #include <WinBase.h>
 
-#elif defined _GTHREAD_POSIX
+#elif defined _GRYLTOOL_POSIX
     #include <sys/types.h>
     #include <sys/wait.h>
     #include <unistd.h>
@@ -49,7 +41,8 @@
 //#define GRYLTHREAD_MUTEXMODE_WINDOWS_USE_KERNELMUTEX  1 
 
 // Thread flags.
-#define GRYLTHREAD_FLAG_ACTIVE  1
+#define GRYLTHREAD_FLAG_ACTIVE      1
+#define GRYLTHREAD_FLAG_DETACHED    2
 
 
 // Threading utilities.
@@ -72,14 +65,15 @@ struct ThreadFuncAttribs_Extended
 
 struct ThreadHandlePriv
 {
-    #if defined __WIN32
-        HANDLE hThread;
-    #elif defined _GTHREAD_POSIX
+    #if defined _GRYLTOOL_WIN32
+        HANDLE hThread; 
+    #elif defined _GRYLTOOL_POSIX
         pthread_t tid;
-        pthread_attr_t attr;
+        pthread_attr_t attribs;
     #endif
     volatile char flags;
-    GrMutex flagtex;
+    volatile long threadID;
+    GrMutex flagtex; // Thread-Safety guarantee'd.
 };
 
 struct ThreadFuncAttribs
@@ -91,7 +85,7 @@ struct ThreadFuncAttribs
 
 
 // Win32 Threading procedure
-#if defined __WIN32
+#if defined _GRYLTOOL_WIN32
 DWORD WINAPI ThreadProc( LPVOID lpParameter )
 {
     // Now retrieve the pointer to procedure and call it.
@@ -107,7 +101,7 @@ DWORD WINAPI ThreadProc( LPVOID lpParameter )
 
 // POSIX threading procedures. In POSIX there is no direct mechanism for checking 
 // if thread has terminated, so we must use flags.
-#if defined _GTHREAD_POSIX
+#if defined _GRYLTOOL_POSIX
 
 // A POSIX Cleanup Handler, setting the ACTIVE flag to false when thread exits;
 void pEndFlagSetProc( void* param )
@@ -128,10 +122,17 @@ void* pThreadProc( void* param )
 {
     // Retrieve the pointer to procedure and parameters.
     struct ThreadFuncAttribs* attrs = (struct ThreadFuncAttribs*)param;
-
     // Push the cleanup handler which must be executed when thread exits.
     pthread_cleanup_push( pEndFlagSetProc, attrs );
 
+    // Set the thread-specific variables, with thread-safety.
+    gthread_Mutex_lock( attrs->threadInfo->flagtex );
+
+    attrs->threadInfo->threadID = (long)gettid();
+
+    gthread_Mutex_unlock( attrs->threadInfo->flagtex );
+
+    // Actually invoke the procedure.
     attrs->proc( attrs->param );
 
     // When thread returns, attrs will be cleaned automatically in the pEndFlagSetProc().
@@ -161,7 +162,7 @@ GrThread gthread_Thread_create(void (*proc)(void*), void* param)
 
     int errr = 0;
     // OS-specific code
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         HANDLE h = CreateThread(NULL, 0, ThreadProc, (void*)attr, 0, NULL);
         if(h)
             thread_id->hThread = h;
@@ -170,12 +171,14 @@ GrThread gthread_Thread_create(void (*proc)(void*), void* param)
             errr = 1;
         }
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         // Create with the DeFaUlt attribs
-        int res = pthread_create( &(thread_id->tid), NULL, pThreadProc, (void*)attr );
+        pthread_attr_init( &(thread_id->attribs) );
+        int res = pthread_create( &(thread_id->tid), &(thread_id->attribs), pThreadProc, (void*)attr );
         if( res != 0 ){ // Error OccurEd.
             hlogf("gthread: ERROR on pthread_create() : %d\n", res);
             errr = 1;
+            pthread_attr_destroy( &(thread_id->attribs) );
         }
     #endif
 
@@ -188,88 +191,150 @@ GrThread gthread_Thread_create(void (*proc)(void*), void* param)
     return (GrThread)thread_id;
 }
 
+// Join == DESTROY. Cleanup Here.
 void gthread_Thread_join(GrThread hnd)
 {
-    if(!hnd) return;
-    if(gthread_Thread_isRunning(hnd))
-    {
-        #if defined __WIN32
-            WaitForSingleObject( ((struct ThreadHandlePriv*)hnd)->hThread, INFINITE );
-            CloseHandle( ((struct ThreadHandlePriv*)hnd)->hThread ); // Close native handle (OS recomendation)
-        #elif defined _GTHREAD_POSIX
-            int res = pthread_join( ((struct ThreadHandlePriv*)hnd)->tid , NULL );
-            if( res != 0 )
-                hlogf("gthread: ERROR on pthread_join() : %s\n", strerror(res));
-        #endif
-    }
+    struct ThreadHandlePriv* pv = (struct ThreadHandlePriv*)hnd;
+    gthread_Mutex_lock( pv->flagtex );
+    
+    // Here we assume that thread is joinable and don't check.
+    // It's programmer's responsibility to keep track of which threads are joinable, after all.
+    #if defined _GRYLTOOL_WIN32
+        WaitForSingleObject( pv->hThread, INFINITE );
+        CloseHandle( pv->hThread ); 
+    #elif defined _GRYLTOOL_POSIX
+        int res = pthread_join( pv->tid , NULL );
+        if( res != 0 )
+            hlogf("gthread: ERROR on pthread_join() : %s\n", strerror(res));
+        // Destroy the no-more-needed thread attribs
+        pthread_attr_destroy( &(pv->attribs) );
+    #endif
+
+    // Unlock and Destroy that mutex.
+    gthread_Mutex_unlock( pv->flagtex );
+    gthread_Mutex_destroy( &(pv->flagtex) );
+
     // Now thread is no longer running, we can free it's handle.
     free( (struct ThreadHandlePriv*)hnd );
 }
 
+/* Function checks if thread is still running, and returns:
+ *  0 - Thread has terminated.
+ *  1 - Thread is still running.
+ *  < 0 - Unknown (Thread is detached on Win32)
+ */ 
 char gthread_Thread_isRunning(GrThread hnd)
 {
     if(!hnd) return 0;
+    char retval = 0; // Return value. Default - not running (0).
     struct ThreadHandlePriv* phnd = (struct ThreadHandlePriv*)hnd;
-    if(! ((phnd->flags) & GRYLTHREAD_FLAG_ACTIVE)) // Active flag is not set.
-        return 0;
+    gthread_Mutex_lock( phnd->flagtex );
 
-    #if defined __WIN32
-        DWORD status;
-        if( GetExitCodeThread( phnd->hThread, &status ) ){
-            if(status == STILL_ACTIVE)
-                return 1; // Still running!
-            // Not running
-	        phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
-        }
-        else // Error occured
-            hlogf("gthread: ERROR: GetExitCodeThread() failed: 0x%0x\n", GetLastError());
+    if((phnd->flags) & GRYLTHREAD_FLAG_ACTIVE) // If "Active" flag is set...
+    {    
+        #if defined _GRYLTOOL_WIN32
+            // TODO: Test the detached stuff.
+            // If "Detached" flag is not set, we can check thread's exit code. 
+            //if(! ((phnd->flags) & GRYLTHREAD_FLAG_DETACHED) )
+            //{ 
+                DWORD status;
+                if( GetExitCodeThread( phnd->hThread, &status ) ){
+                    if(status == STILL_ACTIVE)
+                        retval = 1; // Still running!
+                    else // Not running
+                        phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
+                }
+                else // Error occured
+                    hlogf("gthread: ERROR: GetExitCodeThread() failed: 0x%0x\n", GetLastError());
+            //}
+            //else // Thread is detached!!!!!
+              //  retval = -1; // Unknown.
 
-    #elif defined _GTHREAD_POSIX
-        // On POSIX, the GRYLTHREAD_FLAG_ACTIVE is automatically cleared by the
-        // Thread Cleanup Handler (set by us) when thread terminates.
+        #elif defined _GRYLTOOL_POSIX
+            // On POSIX, the GRYLTHREAD_FLAG_ACTIVE is automatically cleared by the
+            // Thread Cleanup Handler (set by us) when thread terminates.
+            // ---
+            // So if ACTIVE flag is set, it means thread is actually running now.
+            retval = 1; 
 
+        #endif
+    }
+
+    gthread_Mutex_unlock( phnd->flagtex );
+    return retval;
+}
+
+// Private function, assumes that lock is already acquired.
+char gthread_Thread_isJoinable_priv(struct ThreadHandlePriv* prv)
+{
+    #if defined _GRYLTOOL_WIN32
+        if( (prv->flags) & GRYLTHREAD_FLAG_DETACHED )
+            return 0; // Detached --> non-joinable.
+    #elif defined _GRYLTOOL_POSIX
+        // TODO: Check if this works on a real POSIX environment.
+        // We can also do this by just checking the flag.
+        int joinState;
+        pthread_attr_getdetachstate( &(prv->attribs), &joinState );
+        if(joinState != PTHREAD_CREATE_JOINABLE)
+            return 0;
     #endif
-
-    return 0;
+    return 1; // Joinable
 }
 
 char gthread_Thread_isJoinable(GrThread hnd)
 {
-    
+    gthread_Mutex_lock( ((struct ThreadHandlePriv*)hnd)->flagtex );
+    gthread_Thread_isJoinable_priv( (struct ThreadHandlePriv*)hnd );
+
+    gthread_Mutex_unlock( ((struct ThreadHandlePriv*)hnd)->flagtex );
 }
 
+// TODO: Fix detach stuff - use flags or not, 
+//       Or even implement the detached thing anyway???
 void gthread_Thread_detach(GrThread hnd)
 {
-    
+    #if defined _GRYLTOOL_WIN32
+        // We can simply close the handle, but we don't want that, 
+        // because of inability to check if thread is running later.
+        //CloseHandle( ((struct ThreadHandlePriv*)hnd)->hThread ); 
+    #elif defined _GRYLTOOL_POSIX
+        int res = pthread_detach( ((struct ThreadHandlePriv*)hnd)->tid ); 
+        if( res != 0 )
+            hlogf("gthread: ERROR on pthread_detach() : %s\n", strerror(res));
+    #endif
+    ((struct ThreadHandlePriv*)hnd)->flags |= GRYLTHREAD_FLAG_DETACHED; 
 }
 
 void gthread_Thread_exit()
 {
-    
+    #if defined _GRYLTOOL_WIN32
+        ExitThread(0);
+    #elif defined _GRYLTOOL_POSIX
+        pthread_exit(NULL);
+    #endif
 }
 
 // Other Thread funcs
 
 void gthread_Thread_sleep(unsigned int millisecs)
 {
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         Sleep(millisecs);
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         sleep(millisecs);
     #endif
 }
 
 long gthread_Thread_getID(GrThread hnd)
 {
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         if(hnd) // Return specified pid
             return (long) GetThreadId( ((struct ThreadHandlePriv*)hnd)->hThread );    
         return (long) GetCurrentThreadId(); // Else, return current pid.
 
-    #elif defined _GTHREAD_POSIX
-        // TODO: For LooniX, return TID.
-        if(hnd)  // Beware, this returns A STRUCTURE pthread_t represented ad long, NOT a Linux-tid!
-            return (long)( ((struct ThreadHandlePriv*)hnd)->tid );
+    #elif defined _GRYLTOOL_POSIX
+        if(hnd) 
+            return (long)( ((struct ThreadHandlePriv*)hnd)->threadID );
         return (long) gettid(); // This actually returns a TID.
     #endif
     return 0;
@@ -278,9 +343,9 @@ long gthread_Thread_getID(GrThread hnd)
 char gthread_Thread_equal(GrThread t1, GrThread t2)
 {
     if(!t1 || !t2) return 0;
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         return ( gthread_Thread_getID(t1) == gthread_Thread_getID(t2) );
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         return (char)pthread_equal( ((struct ThreadHandlePriv*)t1)->tid,
                                     ((struct ThreadHandlePriv*)t2)->tid );    
     #endif
@@ -293,9 +358,9 @@ char gthread_Thread_equal(GrThread t1, GrThread t2)
 // Process structure
 struct GThread_ProcessHandlePriv
 {
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         HANDLE hProcess;
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         pid_t pid;
     #endif
     volatile char flags;
@@ -314,12 +379,12 @@ GrProcess gthread_Process_fork(void (*proc)(void*), void* param)
 {
     struct GThread_ProcessHandlePriv* procHand = NULL;
 
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         // TODO:
         hlogf("gthread: ERROR: Fork()'ing on Windows is Not (yet) Supported!\n");
         return NULL;
         
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         // Call fork - spawn process.
         // On a child process execution resumes after FORK,
         // For a child fork() returns 0, and for the original, returns 0 on good, < 0 on error.
@@ -343,11 +408,11 @@ void gthread_Process_join(GrProcess hnd)
     if(!hnd) return;
     if( gthread_Process_isRunning(hnd) )
     {
-        #if defined __WIN32
+        #if defined _GRYLTOOL_WIN32
             WaitForSingleObject( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess, INFINITE );
             CloseHandle( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess ); // Close native handle (OS recomendation)
      
-        #elif defined _GTHREAD_POSIX
+        #elif defined _GRYLTOOL_POSIX
             // Just wait for termination of the PID.
             int res = waitpid( ((struct GThread_ProcessHandlePriv*)hnd)->pid, NULL, 0 );
             if( res < 0 ) // Error
@@ -364,7 +429,7 @@ char gthread_Process_isRunning(GrProcess hnd)
     if(! ((phnd->flags) & GRYLTHREAD_FLAG_ACTIVE)) // Active flag is not set.
         return 0;
 
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         DWORD status;
         if( GetExitCodeProcess( phnd->hProcess, &status ) ){
             if(status == STILL_ACTIVE)
@@ -375,7 +440,7 @@ char gthread_Process_isRunning(GrProcess hnd)
         else // Error occured
             hlogf("gthread: ERROR: GetExitCodeProcess() failed: 0x%0x\n", GetLastError());
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         // Here we use kill (send signal to process), with signal as 0 - don't send, just check process state.
         // If error occured, now check if process doesn't exist.
         if( kill( phnd->pid, 0 ) < 0 ){ 
@@ -392,12 +457,12 @@ char gthread_Process_isRunning(GrProcess hnd)
 
 long gthread_Process_getID(GrProcess hnd)
 {
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         if(hnd) // Return specified pid
             return (long) GetProcessId( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess );    
         return (long) GetCurrentProcessId(); // Else, return current pid.
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         if(hnd)
             return (long)( ((struct GThread_ProcessHandlePriv*)hnd)->pid );
         return (long) getpid();
@@ -414,10 +479,10 @@ long gthread_Process_getID(GrProcess hnd)
  */
 struct GThread_MutexPriv
 {
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         CRITICAL_SECTION critSect;
         HANDLE hMutex;
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         pthread_mutex_t mtx;
     #endif
     int flags;
@@ -433,7 +498,7 @@ GrMutex gthread_Mutex_init(int flags)
     }
     mpv->flags = flags;
 
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         // If this mode is defined, we will use the Kernel-level mutex handle, which works across processes. 
         // If not, then only the process-specific CRITICAL_SECTION will be used.
         if( flags & GTHREAD_MUTEX_SHARED )
@@ -455,7 +520,7 @@ GrMutex gthread_Mutex_init(int flags)
             InitializeCriticalSection( &(mpv->critSect) ); 
         }
         
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         res = pthread_mutex_init( &(mpv->mtx), NULL );
         if( res != 0 ){ // Error occur'd when initializing.
             hlogf("gthread: Error initializing Mutex (%d) !\n", res);
@@ -474,7 +539,7 @@ void gthread_Mutex_destroy(GrMutex* mtx)
 {
     if(!mtx || !*mtx) return;
     struct GThread_MutexPriv* mpv = (struct GThread_MutexPriv*)(*mtx);
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         // Free all resources of the structure.
         if( mpv->hMutex ){
             if( !CloseHandle( mpv->hMutex ) ) // If error, retval is NonZero
@@ -484,7 +549,7 @@ void gthread_Mutex_destroy(GrMutex* mtx)
             DeleteCriticalSection( &(mpv->critSect) ); 
         }
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         if( pthread_mutex_destroy( &(mpv->mtx) ) != 0 ){
             hlogf("gthread: pthread_mutex_destroy() failed to destroy a mutex.\n");
     #endif
@@ -497,7 +562,7 @@ void gthread_Mutex_destroy(GrMutex* mtx)
 char gthread_Mutex_lock(GrMutex mtx)
 {
     if(!mtx) return 1;
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         if( (((struct GThread_MutexPriv*)mtx)->flags) & GTHREAD_MUTEX_SHARED ){ // Lock hMUTEX
             // The WaitForSinleObject(), waits until the handle is signaled
             // If called on a Mutex, after waiting also takes Ownership of this mutex (Ackquires a lock).
@@ -511,7 +576,7 @@ char gthread_Mutex_lock(GrMutex mtx)
             EnterCriticalSection( &( ((struct GThread_MutexPriv*)mtx)->critSect ) );
         }
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         int res = pthread_mutex_lock( &( ((struct GThread_MutexPriv*)mtx)->mtx ) );
         if(res != 0){
             hlogf("gthread: Error locking mutex (%d)\n", res);
@@ -529,7 +594,7 @@ char gthread_Mutex_lock(GrMutex mtx)
 char gthread_Mutex_tryLock(GrMutex mtx)
 {
     if(!mtx) return -3;
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         if( (((struct GThread_MutexPriv*)mtx)->flags) & GTHREAD_MUTEX_SHARED ){
             hlogf("gthread: TryLock can't be called on a Shared Win32 mutex. \n");
             return -2;
@@ -542,7 +607,7 @@ char gthread_Mutex_tryLock(GrMutex mtx)
             }
         }
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         int res = pthread_mutex_trylock( &( ((struct GThread_MutexPriv*)mtx)->mtx ) );
         if(res != 0 && res != EBUSY){
             hlogf("gthread: Error locking mutex (%d)\n", res);
@@ -564,7 +629,7 @@ char gthread_Mutex_tryLock(GrMutex mtx)
 char gthread_Mutex_unlock(GrMutex mtx)
 {
     if(!mtx) return 1;
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         if( (((struct GThread_MutexPriv*)mtx)->flags) & GTHREAD_MUTEX_SHARED ){ // UnLock hMUTEX
             // If the function fails, the return value is ZERO.
             if( ReleaseMutex( ((struct GThread_MutexPriv*)mtx)->hMutex ) == 0 ){
@@ -576,7 +641,7 @@ char gthread_Mutex_unlock(GrMutex mtx)
             LeaveCriticalSection( &( ((struct GThread_MutexPriv*)mtx)->critSect ) );
         }
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         int res = pthread_mutex_unlock( &( ((struct GThread_MutexPriv*)mtx)->mtx ) );
         if(res != 0){
             hlogf("gthread: Error pthread_unlocking mutex (%d)\n", res);
@@ -595,9 +660,9 @@ char gthread_Mutex_unlock(GrMutex mtx)
  */ 
 struct GThread_CondVarPriv
 {
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         CONDITION_VARIABLE cond;
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         pthread_cond_t cond;
     #endif
 };
@@ -611,11 +676,11 @@ GrCondVar gthread_CondVar_init()
         return NULL;
     }
 
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         // Init a condVar. The function does not fail!
         InitializeConditionVariable( &(mpv->cond) );    
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         // Init with default attributes.
         res = pthread_cond_init( &(mpv->cond), NULL );
         if( res != 0 ){ // Error occur'd when initializing.
@@ -633,10 +698,10 @@ void gthread_CondVar_destroy(GrCondVar* cond)
     if(!cond || !*cond)
         return;
     struct GThread_CondVarPriv* mpv = (struct GThread_CondVarPriv*)(*cond);
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         // On Windows, we don't need to destroy a CondVar!!!
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         // Init with default attributes.
         res = pthread_cond_destroy( &(mpv->cond) );
         if( res != 0 ){ // Error occur'd when initializing.
@@ -652,7 +717,7 @@ char gthread_CondVar_wait_time(GrCondVar cond, GrMutex mutex, long millisec)
     if(!cond || !mutex) return -2;
     struct GThread_CondVarPriv* cvp = (struct GThread_CondVarPriv*)cond;
     struct GThread_MutexPriv* mtp = (struct GThread_MutexPriv*)mutex;
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         if( (mtp->flags) & GTHREAD_MUTEX_SHARED ){ // Only unshared mutex can be used to wait 
             hlogf("gthread: ERROR: CondVar can only wait on a non-shared Windows mutex (CRITICAL_SECTION)\n");
             return -3;
@@ -668,7 +733,7 @@ char gthread_CondVar_wait_time(GrCondVar cond, GrMutex mutex, long millisec)
             return 1; // Timeout
         }
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         struct timespec tims;
         tims.tv_sec = millisec / 1000; // Seconds
         tims.tv_nsec = (millisec % 1000) * 1000; // Nanoseconds
@@ -687,10 +752,10 @@ char gthread_CondVar_wait_time(GrCondVar cond, GrMutex mutex, long millisec)
 char gthread_CondVar_wait(GrCondVar cond, GrMutex mtp)
 {
     if(!cond || !mtp) return -2;
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         return gthread_CondVar_wait_time(cond, mtp, INFINITE);
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         int res = pthread_cond_wait( &(cvp->cond), &(mtp->mtx) );
         if( res != 0 ){
             hlogf("gthread: ERROR when trying to pthread_cond_wait() : %d\n", res);
@@ -703,10 +768,10 @@ char gthread_CondVar_wait(GrCondVar cond, GrMutex mtp)
 void gthread_CondVar_notify(GrCondVar cond)
 {
     if(!cond) return;
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         WakeConditionVariable( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         int res = pthread_cond_signal( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
         if( res != 0 ){
             hlogf("gthread: ERROR when trying to pthread_cond_signal() : %d\n", res);
@@ -717,10 +782,10 @@ void gthread_CondVar_notify(GrCondVar cond)
 void gthread_CondVar_notifyAll(GrCondVar cond)
 {
     if(!cond) return;
-    #if defined __WIN32
+    #if defined _GRYLTOOL_WIN32
         WakeAllConditionVariable( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
 
-    #elif defined _GTHREAD_POSIX
+    #elif defined _GRYLTOOL_POSIX
         int res = pthread_cond_broadcast( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
         if( res != 0 ){
             hlogf("gthread: ERROR when trying to pthread_cond_signal() : %d\n", res);

@@ -4,7 +4,7 @@
 /************************************************************  
  *         GrylloThreads C-Multithreading Framework         *
  *                ~ ~ ~ By GrylloTron ~ ~ ~                 *
- *                       Version 0.2                        *
+ *                      Version 0.2.1                       *
  *        -  -  -  -  -  -  -  -  -  -  -  -  -  -  -       *      
  *                                                          *
  *  Features:                                               *
@@ -16,15 +16,16 @@
  *    - Condition Variable                                  *
  *                                                          *
  *  TODOS:
- *  - On POSIX, Ability to choose between pthreads or fork().
- *  - Extension to above, a Process_create() function.
+ *  - Process management API (Partly implemented).
+ *  - Maybe split SharedMutex and SimpleMutex
+ *  - Recheck the concurrency in Process API and mutex API
  *  
  *  BUGS:
  *  - Must check bugs on POSIX.                             
  *                                                          *
  ***********************************************************/ 
 
-#define GTHREAD_VERSION "v0.2"
+#define GTHREAD_VERSION "v0.2.1"
 
 /*! The typedef'd primitives
  *  Implementation is defined in their respective source files.
