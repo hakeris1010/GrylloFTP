@@ -70,79 +70,122 @@ struct ThreadFuncAttribs_Extended
                     // - data (count * sum(funcSig.paramInfo[i].size, i=[0, count]))
 };
 
-struct ThreadFuncAttribs
-{
-	void (*proc)(void*);
-	void* param;
-};
-
 struct ThreadHandlePriv
 {
     #if defined __WIN32
         HANDLE hThread;
     #elif defined _GTHREAD_POSIX
-        pid_t pid;
+        pthread_t tid;
+        pthread_attr_t attr;
     #endif
-    char flags;
+    volatile char flags;
+    GrMutex flagtex;
 };
 
+struct ThreadFuncAttribs
+{
+	void (*proc)(void*);
+	void* param;
+    struct ThreadHandlePriv* threadInfo;
+};
+
+
+// Win32 Threading procedure
 #if defined __WIN32
 DWORD WINAPI ThreadProc( LPVOID lpParameter )
 {
-    if(!lpParameter) // Error. Bad ptr.
-        return 1;
     // Now retrieve the pointer to procedure and call it.
     struct ThreadFuncAttribs* attrs = (struct ThreadFuncAttribs*)lpParameter;
     attrs->proc( attrs->param );
 
-    // Cleanup after the proc returns - the structure ThreadFuncAttribs is malloc'd on the heap, so we must free it. The pointer belongs only to this thread at this moment.
+    // Cleanup after the proc returns - the structure ThreadFuncAttribs is malloc'd on the heap, 
+    // so we must free it. The pointer belongs only to this thread at this moment.
     free(attrs);
     return 0;
 }
 #endif
 
-GrThread gthread_Thread_create(void (*proc)(void*), void* param)
+// POSIX threading procedures. In POSIX there is no direct mechanism for checking 
+// if thread has terminated, so we must use flags.
+#if defined _GTHREAD_POSIX
+
+// A POSIX Cleanup Handler, setting the ACTIVE flag to false when thread exits;
+void pEndFlagSetProc( void* param )
 {
-    struct ThreadHandlePriv* thread_id = NULL;
-    // OS-specific code
-    #if defined __WIN32
-        struct ThreadFuncAttribs* attr = malloc( sizeof(struct ThreadFuncAttribs) );
-		attr->proc = proc;
-        attr->param = param;
+    struct ThreadFuncAttribs* attrs = (struct ThreadFuncAttribs*)param;
 
-        HANDLE h = CreateThread(NULL, 0, ThreadProc, (void*)attr, 0, NULL);
-        if(h){
-            thread_id = malloc(sizeof(struct ThreadHandlePriv));
-            thread_id->hThread = h;
-        }
-    #elif defined _GTHREAD_POSIX
-        // Call fork - spawn process.
-        // On a child process execution resumes after FORK,
-        // For a child fork() returns 0, and for the original, returns 0 on good, < 0 on error.
-        pid_t pid = fork();
+    // Set the flag to InActive, protected by Mutex.
+    gthread_Mutex_lock( attrs->threadInfo->flagtex );
+    (attrs->threadInfo->flags) &= ~GRYLTHREAD_FLAG_ACTIVE;
+    gthread_Mutex_unlock( attrs->threadInfo->flagtex );
 
-        if(pid == 0){ // Child process
-            proc(param); // Call the client servicer function
-        }
-        else if(pid > 0){ // Parent and no error
-            thread_id = malloc(sizeof(struct ThreadHandlePriv));
-            thread_id->pid = pid;
-        }
-    #endif
-    // Set the "active" flag on thread.	
-    if(thread_id) // No error
-    	thread_id->flags |= GRYLTHREAD_FLAG_ACTIVE;	
-
-    return (GrThread)thread_id;
+    // It's curren't thread's responsibility to free the memory used by ThreadFuncAttribs parameter.
+    free(attrs); // Gets called no matter what, because it's a Cleanup Handler.
 }
 
-void gthread_Thread_sleep(unsigned int millisecs)
+// Function must return the State of the thread, which later could be got into a variable.
+void* pThreadProc( void* param )
 {
+    // Retrieve the pointer to procedure and parameters.
+    struct ThreadFuncAttribs* attrs = (struct ThreadFuncAttribs*)param;
+
+    // Push the cleanup handler which must be executed when thread exits.
+    pthread_cleanup_push( pEndFlagSetProc, attrs );
+
+    attrs->proc( attrs->param );
+
+    // When thread returns, attrs will be cleaned automatically in the pEndFlagSetProc().
+    return NULL; // Status of returning  -  null.
+}
+#endif
+
+// Actual Threading API implementation.
+
+GrThread gthread_Thread_create(void (*proc)(void*), void* param)
+{
+    struct ThreadHandlePriv* thread_id = calloc( 1, sizeof(struct ThreadHandlePriv) );
+    struct ThreadFuncAttribs* attr = malloc( sizeof(struct ThreadFuncAttribs) );
+    if(!thread_id || !attr){
+        hlogf("gthread: ERROR on malloc()...\n");
+        return NULL;
+    }
+
+	attr->proc = proc;
+    attr->param = param;
+    attr->threadInfo = thread_id;
+
+    // Set the "active" flag on thread.	If error occurs on creation, this memory will just be "free'd"
+    thread_id->flags |= GRYLTHREAD_FLAG_ACTIVE;	
+    // (Maybe UnNecessary) Init the mutex which protects the FlagVar 
+    thread_id->flagtex = gthread_Mutex_init(0);
+
+    int errr = 0;
+    // OS-specific code
     #if defined __WIN32
-        Sleep(millisecs);
+        HANDLE h = CreateThread(NULL, 0, ThreadProc, (void*)attr, 0, NULL);
+        if(h)
+            thread_id->hThread = h;
+        else{ // h == NULL, error occured.
+            hlogf("gthread: ERROR when creating Win32 thread: 0x%0x\n", GetLastError());
+            errr = 1;
+        }
+
     #elif defined _GTHREAD_POSIX
-        sleep(millisecs);
+        // Create with the DeFaUlt attribs
+        int res = pthread_create( &(thread_id->tid), NULL, pThreadProc, (void*)attr );
+        if( res != 0 ){ // Error OccurEd.
+            hlogf("gthread: ERROR on pthread_create() : %d\n", res);
+            errr = 1;
+        }
     #endif
+
+    if( errr ){ // Error occured
+        free( thread_id );
+        free( attr );
+        return NULL;
+    }
+
+    return (GrThread)thread_id;
 }
 
 void gthread_Thread_join(GrThread hnd)
@@ -154,7 +197,9 @@ void gthread_Thread_join(GrThread hnd)
             WaitForSingleObject( ((struct ThreadHandlePriv*)hnd)->hThread, INFINITE );
             CloseHandle( ((struct ThreadHandlePriv*)hnd)->hThread ); // Close native handle (OS recomendation)
         #elif defined _GTHREAD_POSIX
-            waitpid( ((struct ThreadHandlePriv*)hnd)->pid, NULL, 0 );
+            int res = pthread_join( ((struct ThreadHandlePriv*)hnd)->tid , NULL );
+            if( res != 0 )
+                hlogf("gthread: ERROR on pthread_join() : %s\n", strerror(res));
         #endif
     }
     // Now thread is no longer running, we can free it's handle.
@@ -165,7 +210,7 @@ char gthread_Thread_isRunning(GrThread hnd)
 {
     if(!hnd) return 0;
     struct ThreadHandlePriv* phnd = (struct ThreadHandlePriv*)hnd;
-    if(! (phnd->flags & GRYLTHREAD_FLAG_ACTIVE)) // Active flag is not set.
+    if(! ((phnd->flags) & GRYLTHREAD_FLAG_ACTIVE)) // Active flag is not set.
         return 0;
 
     #if defined __WIN32
@@ -174,21 +219,151 @@ char gthread_Thread_isRunning(GrThread hnd)
             if(status == STILL_ACTIVE)
                 return 1; // Still running!
             // Not running
-	    phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
+	        phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
         }
+        else // Error occured
+            hlogf("gthread: ERROR: GetExitCodeThread() failed: 0x%0x\n", GetLastError());
+
+    #elif defined _GTHREAD_POSIX
+        // On POSIX, the GRYLTHREAD_FLAG_ACTIVE is automatically cleared by the
+        // Thread Cleanup Handler (set by us) when thread terminates.
+
+    #endif
+
+    return 0;
+}
+
+char gthread_Thread_isJoinable(GrThread hnd)
+{
+    
+}
+
+void gthread_Thread_detach(GrThread hnd)
+{
+    
+}
+
+void gthread_Thread_exit()
+{
+    
+}
+
+// Other Thread funcs
+
+void gthread_Thread_sleep(unsigned int millisecs)
+{
+    #if defined __WIN32
+        Sleep(millisecs);
+    #elif defined _GTHREAD_POSIX
+        sleep(millisecs);
+    #endif
+}
+
+long gthread_Thread_getID(GrThread hnd)
+{
+    
+}
+
+char gthread_Thread_equal(GrThread t1, GrThread t2)
+{
+    
+}
+
+
+//==========================================================//
+// - - - - - - - - -   Process section   - - - - - - - - - -//
+
+// Process structure
+struct GThread_ProcessHandlePriv
+{
+    #if defined __WIN32
+        HANDLE hProcess;
+    #elif defined _GTHREAD_POSIX
+        pid_t pid;
+    #endif
+    volatile char flags;
+    GrMutex flagtex; 
+};
+
+/* Process Functions.
+ *  Allow process creation, joining, exitting, and Pid-operations.
+ */ 
+GrProcess gthread_Process_create(void (*proc)(void*), void* param)
+{
+    struct GThread_ProcessHandlePriv* procHand = NULL;
+
+    #if defined __WIN32
+        
+    #elif defined __linux__
+        // Call fork - spawn process.
+        // On a child process execution resumes after FORK,
+        // For a child fork() returns 0, and for the original, returns 0 on good, < 0 on error.
+        pid_t pid = fork();
+
+        if(pid == 0){ // Child process
+            proc(param); // Call the client servicer function
+        }
+        else if(pid > 0){ // Parent and no error
+            procHand = malloc(sizeof(struct GThread_ProcessHandlePriv));
+            procHand->pid = pid;
+        }
+    #endif
+
+    return (GrProcess) procHand;
+}
+
+void gthread_Process_join(GrProcess hnd)
+{
+    if(!hnd) return;
+    #if defined __WIN32
+        WaitForSingleObject( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess, INFINITE );
+        CloseHandle( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess ); // Close native handle (OS recomendation)
+ 
+    #elif defined __linux__
+        // Just wait for termination of the PID.
+        int res = waitpid( ((struct GThread_ProcessHandlePriv*)hnd)->pid, NULL, 0 );
+        if( res < 0 ) // Error
+            hlogf("gthread: ERROR on waitpid(): %s\n", strerror(res));
+    #endif
+    free( (struct GThread_ProcessHandlePriv*)hnd );
+}
+
+char gthread_Process_isRunning(GrProcess hnd)
+{
+    if(!hnd) return 0;
+    struct GThread_ProcessHandlePriv* phnd = (struct GThread_ProcessHandlePriv*)hnd;
+    if(! ((phnd->flags) & GRYLTHREAD_FLAG_ACTIVE)) // Active flag is not set.
+        return 0;
+
+    #if defined __WIN32
+        DWORD status;
+        if( GetExitCodeProcess( phnd->hProcess, &status ) ){
+            if(status == STILL_ACTIVE)
+                return 1; // Still running!
+            // Not running
+	        phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
+        }
+        else // Error occured
+            hlogf("gthread: ERROR: GetExitCodeProcess() failed: 0x%0x\n", GetLastError());
+
     #elif defined _GTHREAD_POSIX
         // Here we use kill (send signal to process), with signal as 0 - don't send, just check process state.
         // If error occured, now check if process doesn't exist.
         if( kill( phnd->pid, 0 ) < 0 ){ 
             if(errno == ESRCH){ // Process doesn't exist.
 	    	    phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
-                    return 0; // Not running.
+                return 0; // Not running.
 	        }
         }
-        return 1; // Thread running.
+        return 1; // Process running.
     #endif
 
     return 0;
+}
+
+long gthread_Process_getID(GrProcess hnd)
+{
+    ;
 }
 
 

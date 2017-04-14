@@ -4,21 +4,27 @@
 /************************************************************  
  *         GrylloThreads C-Multithreading Framework         *
  *                ~ ~ ~ By GrylloTron ~ ~ ~                 *
- *                       Version 0.1                        *
+ *                       Version 0.2                        *
  *        -  -  -  -  -  -  -  -  -  -  -  -  -  -  -       *      
  *                                                          *
  *  Features:                                               *
  *  - Cross-Platform concurrent execution framework         *
  *    - Currently supports POSIX and Win32                  *
- *  - Currently supported concurrency entities:             *
+ *  - Currently supported Native concurrency entities:      *
  *    - Thread                                              *
- *
+ *    - Mutex                                               * 
+ *    - Condition Variable                                  *
+ *                                                          *
  *  TODOS:
  *  - On POSIX, Ability to choose between pthreads or fork().
- *  - Mutexes and CondVars     
- *
+ *  - Extension to above, a Process_create() function.
+ *  
+ *  BUGS:
+ *  - Must check bugs on POSIX.                             
  *                                                          *
  ***********************************************************/ 
+
+#define GTHREAD_VERSION "v0.2"
 
 /*! The typedef'd primitives
  *  Implementation is defined in their respective source files.
@@ -26,6 +32,7 @@
 typedef void *GrThread;
 typedef void *GrMutex;
 typedef void *GrCondVar;
+typedef void *GrProcess;
 
 /*! Specific attribute flags
  */
@@ -33,13 +40,27 @@ typedef void *GrCondVar;
 #define GTHREAD_MUTEX_SHARED  1
 
 /*! Threading functions
- *  Supports creation, checking if running and joining.
+ *  Supports creation, checking if running, joining, etc.
  */ 
 GrThread gthread_Thread_create(void (*proc)(void*), void* param);
 void gthread_Thread_join(GrThread hnd);
-char gthread_Thread_isRunning(GrThread hnd);
+void gthread_Thread_detach(GrThread hnd);
+void gthread_Thread_exit();
 
+char gthread_Thread_isRunning(GrThread hnd);
+char gthread_Thread_isJoinable(GrThread hnd);
+
+long gthread_Thread_getID(GrThread hnd);
+char gthread_Thread_equal(GrThread t1, GrThread t2);
 void gthread_Thread_sleep(unsigned int millisecs);
+
+/*! Process Functions.
+ *  Allow process creation, joining, exitting, and Pid-operations.
+ */ 
+GrProcess gthread_Process_create(void (*proc)(void*), void* param);
+void gthread_Process_join(GrProcess hnd);
+char gthread_Process_isRunning(GrProcess hnd);
+long gthread_Process_getID(GrProcess hnd);
 
 /*! Mutex functions.
  *  Allow all basic mutex operations.
