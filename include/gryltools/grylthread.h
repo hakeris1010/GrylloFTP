@@ -57,7 +57,8 @@ void gthread_Thread_sleep(unsigned int millisecs);
 /*! Process Functions.
  *  Allow process creation, joining, exitting, and Pid-operations.
  */ 
-GrProcess gthread_Process_create(void (*proc)(void*), void* param);
+GrProcess gthread_Process_create(const char* pathToFile, const char* commandLine);
+GrProcess gthread_Process_fork(void (*proc)(void*), void* param);
 void gthread_Process_join(GrProcess hnd);
 char gthread_Process_isRunning(GrProcess hnd);
 long gthread_Process_getID(GrProcess hnd);

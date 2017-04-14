@@ -261,12 +261,29 @@ void gthread_Thread_sleep(unsigned int millisecs)
 
 long gthread_Thread_getID(GrThread hnd)
 {
-    
+    #if defined __WIN32
+        if(hnd) // Return specified pid
+            return (long) GetThreadId( ((struct ThreadHandlePriv*)hnd)->hThread );    
+        return (long) GetCurrentThreadId(); // Else, return current pid.
+
+    #elif defined _GTHREAD_POSIX
+        // TODO: For LooniX, return TID.
+        if(hnd)  // Beware, this returns A STRUCTURE pthread_t represented ad long, NOT a Linux-tid!
+            return (long)( ((struct ThreadHandlePriv*)hnd)->tid );
+        return (long) gettid(); // This actually returns a TID.
+    #endif
+    return 0;
 }
 
 char gthread_Thread_equal(GrThread t1, GrThread t2)
 {
-    
+    if(!t1 || !t2) return 0;
+    #if defined __WIN32
+        return ( gthread_Thread_getID(t1) == gthread_Thread_getID(t2) );
+    #elif defined _GTHREAD_POSIX
+        return (char)pthread_equal( ((struct ThreadHandlePriv*)t1)->tid,
+                                    ((struct ThreadHandlePriv*)t2)->tid );    
+    #endif
 }
 
 
@@ -288,13 +305,21 @@ struct GThread_ProcessHandlePriv
 /* Process Functions.
  *  Allow process creation, joining, exitting, and Pid-operations.
  */ 
-GrProcess gthread_Process_create(void (*proc)(void*), void* param)
+GrProcess gthread_Process_create(const char* pathToFile, const char* commandLine)
+{
+     ;
+}
+
+GrProcess gthread_Process_fork(void (*proc)(void*), void* param)
 {
     struct GThread_ProcessHandlePriv* procHand = NULL;
 
     #if defined __WIN32
+        // TODO:
+        hlogf("gthread: ERROR: Fork()'ing on Windows is Not (yet) Supported!\n");
+        return NULL;
         
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         // Call fork - spawn process.
         // On a child process execution resumes after FORK,
         // For a child fork() returns 0, and for the original, returns 0 on good, < 0 on error.
@@ -306,6 +331,7 @@ GrProcess gthread_Process_create(void (*proc)(void*), void* param)
         else if(pid > 0){ // Parent and no error
             procHand = malloc(sizeof(struct GThread_ProcessHandlePriv));
             procHand->pid = pid;
+            // Maybe initialize the mutex (if we'll ever use it).
         }
     #endif
 
@@ -315,16 +341,19 @@ GrProcess gthread_Process_create(void (*proc)(void*), void* param)
 void gthread_Process_join(GrProcess hnd)
 {
     if(!hnd) return;
-    #if defined __WIN32
-        WaitForSingleObject( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess, INFINITE );
-        CloseHandle( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess ); // Close native handle (OS recomendation)
- 
-    #elif defined __linux__
-        // Just wait for termination of the PID.
-        int res = waitpid( ((struct GThread_ProcessHandlePriv*)hnd)->pid, NULL, 0 );
-        if( res < 0 ) // Error
-            hlogf("gthread: ERROR on waitpid(): %s\n", strerror(res));
-    #endif
+    if( gthread_Process_isRunning(hnd) )
+    {
+        #if defined __WIN32
+            WaitForSingleObject( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess, INFINITE );
+            CloseHandle( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess ); // Close native handle (OS recomendation)
+     
+        #elif defined _GTHREAD_POSIX
+            // Just wait for termination of the PID.
+            int res = waitpid( ((struct GThread_ProcessHandlePriv*)hnd)->pid, NULL, 0 );
+            if( res < 0 ) // Error
+                hlogf("gthread: ERROR on waitpid(): %s\n", strerror(res));
+        #endif
+    }
     free( (struct GThread_ProcessHandlePriv*)hnd );
 }
 
@@ -363,7 +392,17 @@ char gthread_Process_isRunning(GrProcess hnd)
 
 long gthread_Process_getID(GrProcess hnd)
 {
-    ;
+    #if defined __WIN32
+        if(hnd) // Return specified pid
+            return (long) GetProcessId( ((struct GThread_ProcessHandlePriv*)hnd)->hProcess );    
+        return (long) GetCurrentProcessId(); // Else, return current pid.
+
+    #elif defined _GTHREAD_POSIX
+        if(hnd)
+            return (long)( ((struct GThread_ProcessHandlePriv*)hnd)->pid );
+        return (long) getpid();
+    #endif
+    return 0;
 }
 
 
@@ -629,7 +668,7 @@ char gthread_CondVar_wait_time(GrCondVar cond, GrMutex mutex, long millisec)
             return 1; // Timeout
         }
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         struct timespec tims;
         tims.tv_sec = millisec / 1000; // Seconds
         tims.tv_nsec = (millisec % 1000) * 1000; // Nanoseconds
@@ -651,7 +690,7 @@ char gthread_CondVar_wait(GrCondVar cond, GrMutex mtp)
     #if defined __WIN32
         return gthread_CondVar_wait_time(cond, mtp, INFINITE);
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         int res = pthread_cond_wait( &(cvp->cond), &(mtp->mtx) );
         if( res != 0 ){
             hlogf("gthread: ERROR when trying to pthread_cond_wait() : %d\n", res);
@@ -667,7 +706,7 @@ void gthread_CondVar_notify(GrCondVar cond)
     #if defined __WIN32
         WakeConditionVariable( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         int res = pthread_cond_signal( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
         if( res != 0 ){
             hlogf("gthread: ERROR when trying to pthread_cond_signal() : %d\n", res);
@@ -681,7 +720,7 @@ void gthread_CondVar_notifyAll(GrCondVar cond)
     #if defined __WIN32
         WakeAllConditionVariable( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
 
-    #elif defined __linux__
+    #elif defined _GTHREAD_POSIX
         int res = pthread_cond_broadcast( &( ((struct GThread_CondVarPriv*)cond)->cond ) );
         if( res != 0 ){
             hlogf("gthread: ERROR when trying to pthread_cond_signal() : %d\n", res);
