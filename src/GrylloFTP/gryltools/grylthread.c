@@ -13,10 +13,19 @@
 #elif defined _GRYLTOOL_POSIX
     #include <sys/types.h>
     #include <sys/wait.h>
+    #include <sys/syscall.h>
     #include <unistd.h>
     #include <errno.h>
     #include <signal.h>
     #include <pthread.h>
+
+    // Set the Error if some headers are unavailable
+	#ifdef SYS_gettid
+		pid_t tid = syscall(SYS_gettid);
+	#else
+		#error "SYS_gettid unavailable on this system"
+	#endif 
+
 #endif
 
 #include <stdio.h>
