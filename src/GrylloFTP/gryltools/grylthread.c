@@ -16,6 +16,7 @@
     #include <unistd.h>
     #include <errno.h>
     #include <signal.h>
+    #include <pthread.h>
 #endif
 
 #include <stdio.h>
@@ -127,7 +128,6 @@ void* pThreadProc( void* param )
 
     // Set the thread-specific variables, with thread-safety.
     gthread_Mutex_lock( attrs->threadInfo->flagtex );
-
     attrs->threadInfo->threadID = (long)gettid();
 
     gthread_Mutex_unlock( attrs->threadInfo->flagtex );
@@ -326,13 +326,21 @@ void gthread_Thread_detach(GrThread hnd)
     gthread_Mutex_unlock( ((struct ThreadHandlePriv*)hnd)->flagtex );
 }
 
+// Private function, Lock is Acquired.
 static void gthread_Thread_terminate_priv( struct ThreadHandlePriv* pv )
 {
     #if defined _GRYLTOOL_WIN32
-        
+        TerminateThread( pv->hThread, 0 ); 
     #elif defined _GRYLTOOL_POSIX
-        
+        // TODO: We should probably use pthread_kill(), after installing signal handler on the specified thread.
+        // It is known that pthread_cancel() terminates thread only after thread calls a SysCall which is a
+        // Cancellation Point. This should not work immediatly.
+        pthread_cancel( pv->tid );
+
+        // After Cancellation we could join. Wait until the thread closes itself (it's optional).
     #endif
+    // Set the activity flag to false.
+    (pv->flags) &= ~GRYLTHREAD_FLAG_ACTIVE;
 }
 
 void gthread_Thread_terminate(GrThread hnd)
