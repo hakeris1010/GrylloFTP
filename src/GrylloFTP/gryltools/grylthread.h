@@ -32,6 +32,7 @@
  */ 
 typedef void *GrThread;
 typedef void *GrMutex;
+typedef void *GrSharedMutex;
 typedef void *GrCondVar;
 typedef void *GrProcess;
 
@@ -44,9 +45,10 @@ typedef void *GrProcess;
  *  Supports creation, checking if running, joining, etc.
  */ 
 GrThread gthread_Thread_create(void (*proc)(void*), void* param);
-void gthread_Thread_join(GrThread hnd);
+void gthread_Thread_join(GrThread hnd, char destroy);
 void gthread_Thread_detach(GrThread hnd);
-void gthread_Thread_exit();
+void gthread_Thread_destroy(GrThread hnd);
+void gthread_Thread_terminate(GrThread hnd);
 
 char gthread_Thread_isRunning(GrThread hnd);
 char gthread_Thread_isJoinable(GrThread hnd);
@@ -54,6 +56,7 @@ char gthread_Thread_isJoinable(GrThread hnd);
 long gthread_Thread_getID(GrThread hnd);
 char gthread_Thread_equal(GrThread t1, GrThread t2);
 void gthread_Thread_sleep(unsigned int millisecs);
+void gthread_Thread_exit();
 
 /*! Process Functions.
  *  Allow process creation, joining, exitting, and Pid-operations.

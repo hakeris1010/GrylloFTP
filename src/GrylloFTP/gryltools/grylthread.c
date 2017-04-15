@@ -141,6 +141,10 @@ void* pThreadProc( void* param )
 #endif
 
 // Actual Threading API implementation.
+// Private function definitions
+static void gthread_Thread_terminate_priv( struct ThreadHandlePriv* pv );
+
+// API Public funcs
 
 GrThread gthread_Thread_create(void (*proc)(void*), void* param)
 {
@@ -191,22 +195,19 @@ GrThread gthread_Thread_create(void (*proc)(void*), void* param)
     return (GrThread)thread_id;
 }
 
-// Join == DESTROY. Cleanup Here.
-void gthread_Thread_join(GrThread hnd)
+void gthread_Thread_destroy(GrThread hnd)
 {
     struct ThreadHandlePriv* pv = (struct ThreadHandlePriv*)hnd;
     gthread_Mutex_lock( pv->flagtex );
+
+    // If thread hasn't been joined (is still active) and hasn't been detached, terminate.
+    if( !(pv->flags & GRYLTHREAD_FLAG_DETACHED) /* && isRunning(pv) */ )
+        gthread_Thread_terminate_priv( pv ); // Thread's active state will be checked in this function.
     
-    // Here we assume that thread is joinable and don't check.
-    // It's programmer's responsibility to keep track of which threads are joinable, after all.
+    // destroy the no-more-needed thread attribs and close Win32 handles.
     #if defined _GRYLTOOL_WIN32
-        WaitForSingleObject( pv->hThread, INFINITE );
         CloseHandle( pv->hThread ); 
     #elif defined _GRYLTOOL_POSIX
-        int res = pthread_join( pv->tid , NULL );
-        if( res != 0 )
-            hlogf("gthread: ERROR on pthread_join() : %s\n", strerror(res));
-        // Destroy the no-more-needed thread attribs
         pthread_attr_destroy( &(pv->attribs) );
     #endif
 
@@ -218,13 +219,34 @@ void gthread_Thread_join(GrThread hnd)
     free( (struct ThreadHandlePriv*)hnd );
 }
 
+void gthread_Thread_join(GrThread hnd, char destroy)
+{
+    struct ThreadHandlePriv* pv = (struct ThreadHandlePriv*)hnd;
+    gthread_Mutex_lock( pv->flagtex );
+    
+    // Here we assume that thread is joinable and don't check.
+    // It's programmer's responsibility to keep track of which threads are joinable, after all.
+    #if defined _GRYLTOOL_WIN32
+        WaitForSingleObject( pv->hThread, INFINITE );
+    #elif defined _GRYLTOOL_POSIX
+        int res = pthread_join( pv->tid , NULL );
+        if( res != 0 )
+            hlogf("gthread: ERROR on pthread_join() : %s\n", strerror(res));
+    #endif
+
+    // Unlock the mutex, and call destroy() if specified.
+    gthread_Mutex_unlock( pv->flagtex );
+
+    if(destroy)
+        gthread_Thread_destroy( hnd );
+}
+
 /* Function checks if thread is still running, and returns:
  *  0 - Thread has terminated.
- *  1 - Thread is still running.
- *  < 0 - Unknown (Thread is detached on Win32)
+ *  NoZero - Thread is still running.
  */ 
 char gthread_Thread_isRunning(GrThread hnd)
-{
+{ 
     if(!hnd) return 0;
     char retval = 0; // Return value. Default - not running (0).
     struct ThreadHandlePriv* phnd = (struct ThreadHandlePriv*)hnd;
@@ -233,22 +255,15 @@ char gthread_Thread_isRunning(GrThread hnd)
     if((phnd->flags) & GRYLTHREAD_FLAG_ACTIVE) // If "Active" flag is set...
     {    
         #if defined _GRYLTOOL_WIN32
-            // TODO: Test the detached stuff.
-            // If "Detached" flag is not set, we can check thread's exit code. 
-            //if(! ((phnd->flags) & GRYLTHREAD_FLAG_DETACHED) )
-            //{ 
-                DWORD status;
-                if( GetExitCodeThread( phnd->hThread, &status ) ){
-                    if(status == STILL_ACTIVE)
-                        retval = 1; // Still running!
-                    else // Not running
-                        phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
-                }
-                else // Error occured
-                    hlogf("gthread: ERROR: GetExitCodeThread() failed: 0x%0x\n", GetLastError());
-            //}
-            //else // Thread is detached!!!!!
-              //  retval = -1; // Unknown.
+            DWORD status;
+            if( GetExitCodeThread( phnd->hThread, &status ) ){
+                if(status == STILL_ACTIVE)
+                    retval = 1; // Still running!
+                else // Not running
+                    phnd->flags &= ~GRYLTHREAD_FLAG_ACTIVE; // Clear the active flag.
+            }
+            else // Error occured
+                hlogf("gthread: ERROR: GetExitCodeThread() failed: 0x%0x\n", GetLastError());
 
         #elif defined _GRYLTOOL_POSIX
             // On POSIX, the GRYLTHREAD_FLAG_ACTIVE is automatically cleared by the
@@ -256,7 +271,6 @@ char gthread_Thread_isRunning(GrThread hnd)
             // ---
             // So if ACTIVE flag is set, it means thread is actually running now.
             retval = 1; 
-
         #endif
     }
 
@@ -264,6 +278,9 @@ char gthread_Thread_isRunning(GrThread hnd)
     return retval;
 }
 
+// TODO: Define a model of joinable thread:
+//       Rely on Flags Only, or Rely on Implementation???
+//
 // Private function, assumes that lock is already acquired.
 char gthread_Thread_isJoinable_priv(struct ThreadHandlePriv* prv)
 {
@@ -283,26 +300,47 @@ char gthread_Thread_isJoinable_priv(struct ThreadHandlePriv* prv)
 
 char gthread_Thread_isJoinable(GrThread hnd)
 {
-    gthread_Mutex_lock( ((struct ThreadHandlePriv*)hnd)->flagtex );
+    /*gthread_Mutex_lock( ((struct ThreadHandlePriv*)hnd)->flagtex );
     gthread_Thread_isJoinable_priv( (struct ThreadHandlePriv*)hnd );
 
+    gthread_Mutex_unlock( ((struct ThreadHandlePriv*)hnd)->flagtex );*/
+    
+    //TODO: Now we just use the flag. (If not detached --> joinable)
+    return !( (((struct ThreadHandlePriv*)hnd)->flags) & GRYLTHREAD_FLAG_DETACHED );
+}
+
+void gthread_Thread_detach(GrThread hnd)
+{
+    gthread_Mutex_lock( ((struct ThreadHandlePriv*)hnd)->flagtex );
+    if( !( (((struct ThreadHandlePriv*)hnd)->flags) & GRYLTHREAD_FLAG_DETACHED) ) // If Not yet DeTaCheD 
+    {
+        #if defined _GRYLTOOL_WIN32
+            // No mechanism to detach on Win32. We just set the flag.
+        #elif defined _GRYLTOOL_POSIX
+            int res = pthread_detach( ((struct ThreadHandlePriv*)hnd)->tid ); 
+            if( res != 0 )
+                hlogf("gthread: ERROR on pthread_detach() : %s\n", strerror(res));
+        #endif
+        ((struct ThreadHandlePriv*)hnd)->flags |= GRYLTHREAD_FLAG_DETACHED; 
+    }
     gthread_Mutex_unlock( ((struct ThreadHandlePriv*)hnd)->flagtex );
 }
 
-// TODO: Fix detach stuff - use flags or not, 
-//       Or even implement the detached thing anyway???
-void gthread_Thread_detach(GrThread hnd)
+static void gthread_Thread_terminate_priv( struct ThreadHandlePriv* pv )
 {
     #if defined _GRYLTOOL_WIN32
-        // We can simply close the handle, but we don't want that, 
-        // because of inability to check if thread is running later.
-        //CloseHandle( ((struct ThreadHandlePriv*)hnd)->hThread ); 
+        
     #elif defined _GRYLTOOL_POSIX
-        int res = pthread_detach( ((struct ThreadHandlePriv*)hnd)->tid ); 
-        if( res != 0 )
-            hlogf("gthread: ERROR on pthread_detach() : %s\n", strerror(res));
+        
     #endif
-    ((struct ThreadHandlePriv*)hnd)->flags |= GRYLTHREAD_FLAG_DETACHED; 
+}
+
+void gthread_Thread_terminate(GrThread hnd)
+{
+    gthread_Mutex_lock( ((struct ThreadHandlePriv*)hnd)->flagtex );
+    gthread_Thread_terminate_priv( (struct ThreadHandlePriv*)hnd );
+
+    gthread_Mutex_unlock( ((struct ThreadHandlePriv*)hnd)->flagtex );
 }
 
 void gthread_Thread_exit()
