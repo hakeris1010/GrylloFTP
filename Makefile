@@ -66,7 +66,8 @@ ifeq ($(OS),Windows_NT)
     LDFLAGS += -lkernel32 -lWs2_32
 	#LIBS_GRYLTOOLS += Ws2_32 kernel32
 else
-    CFLAGS += -std=gnu99 	
+    CFLAGS += -std=gnu99 -pthread	
+    LDFLAGS += -pthread
 endif
 
 #====================================#

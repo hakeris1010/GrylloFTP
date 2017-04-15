@@ -124,7 +124,7 @@ void* pThreadProc( void* param )
     // Retrieve the pointer to procedure and parameters.
     struct ThreadFuncAttribs* attrs = (struct ThreadFuncAttribs*)param;
     // Push the cleanup handler which must be executed when thread exits.
-    pthread_cleanup_push( pEndFlagSetProc, attrs );
+    pthread_cleanup_push( &pEndFlagSetProc, (void*)attrs );
 
     // Set the thread-specific variables, with thread-safety.
     gthread_Mutex_lock( attrs->threadInfo->flagtex );
@@ -136,6 +136,8 @@ void* pThreadProc( void* param )
     attrs->proc( attrs->param );
 
     // When thread returns, attrs will be cleaned automatically in the pEndFlagSetProc().
+    // But the cleanup_pop() must be here because of the macro nature of these functions.
+    pthread_cleanup_pop(1);
     return NULL; // Status of returning  -  null.
 }
 #endif
@@ -556,7 +558,7 @@ GrMutex gthread_Mutex_init(int flags)
             
             mpv->hMutex = CreateMutex( &attrs, FALSE, NULL );
             if( !mpv->hMutex ){
-                hlogf("gthread: CreateMutex() failz0red to initialize Win32 Mutex. ErrCode: 0x%p\n", GetLastError());
+                hlogf("gthread: CreateMutex() failz0red to initialize Win32 Mutex. ErrCode: 0x%0x\n", GetLastError());
                 free(mpv);
                 return NULL;
             }
@@ -567,7 +569,7 @@ GrMutex gthread_Mutex_init(int flags)
         }
         
     #elif defined _GRYLTOOL_POSIX
-        res = pthread_mutex_init( &(mpv->mtx), NULL );
+        int res = pthread_mutex_init( &(mpv->mtx), NULL );
         if( res != 0 ){ // Error occur'd when initializing.
             hlogf("gthread: Error initializing Mutex (%d) !\n", res);
             free(mpv);
@@ -596,7 +598,7 @@ void gthread_Mutex_destroy(GrMutex* mtx)
         }
 
     #elif defined _GRYLTOOL_POSIX
-        if( pthread_mutex_destroy( &(mpv->mtx) ) != 0 ){
+        if( pthread_mutex_destroy( &(mpv->mtx) ) != 0 )
             hlogf("gthread: pthread_mutex_destroy() failed to destroy a mutex.\n");
     #endif
     // At the end, free the dynamically allocated private structure.
@@ -728,7 +730,7 @@ GrCondVar gthread_CondVar_init()
 
     #elif defined _GRYLTOOL_POSIX
         // Init with default attributes.
-        res = pthread_cond_init( &(mpv->cond), NULL );
+        int res = pthread_cond_init( &(mpv->cond), NULL );
         if( res != 0 ){ // Error occur'd when initializing.
             hlogf("gthread: Error initializing pthread_CondVar (%d) !\n", res);
             free(mpv);
@@ -749,10 +751,9 @@ void gthread_CondVar_destroy(GrCondVar* cond)
 
     #elif defined _GRYLTOOL_POSIX
         // Init with default attributes.
-        res = pthread_cond_destroy( &(mpv->cond) );
+        int res = pthread_cond_destroy( &(mpv->cond) );
         if( res != 0 ){ // Error occur'd when initializing.
-            hlogf("gthread: Error destroying pthread_CondVar (%d) !\n", res);
-            return NULL;
+            hlogf("gthread: Error destroying pthread_CondVar (%s) !\n", strerror(res));
         }
     #endif
     free( mpv );
@@ -802,7 +803,8 @@ char gthread_CondVar_wait(GrCondVar cond, GrMutex mtp)
         return gthread_CondVar_wait_time(cond, mtp, INFINITE);
 
     #elif defined _GRYLTOOL_POSIX
-        int res = pthread_cond_wait( &(cvp->cond), &(mtp->mtx) );
+        int res = pthread_cond_wait( &(((struct GThread_CondVarPriv*)cond)->cond),
+			             &(((struct GThread_MutexPriv*)mtp)->mtx) );
         if( res != 0 ){
             hlogf("gthread: ERROR when trying to pthread_cond_wait() : %d\n", res);
             return -1; // Only error can occur, no timeout.
