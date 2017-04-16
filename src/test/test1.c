@@ -1,4 +1,6 @@
 #include <grylthread.h>
+#include <hlog.h>
+#include <gmisc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,6 +142,13 @@ void startThreads()
 
 int main(int argc, char** argv)
 {
+    hlogSetFile("gryltest1.log", HLOG_MODE_UNBUFFERED | HLOG_MODE_APPEND);
+
+    // Print current time to a logger.
+    hlogf("\n\n===============================\nGrylThread Test %s\n> > ", GTHREAD_VERSION);
+    gmisc_PrintTimeByFormat( hlogGetFile(), NULL );
+    hlogf("\n- - - - - - - - - - - - - - - - \n\n");
+
     // Init CondVars and Mutexes
 
     mainJobCond = gthread_CondVar_init();
@@ -196,14 +205,17 @@ int main(int argc, char** argv)
 
     // After all threads completed PreProcessing, we can release 
     // the lock above and signal the MainJob start
-
     printf("\n3 threads ready to race!\n\n");
     startThreads();
 
     // Join all threads safely after thay finish their work.
     for(int i=0; i < WorkerThreadCount; i++) {
-        gthread_Thread_join( WorkerPool[i] );
+        printf("[ Joining thread no %d ]\n", i); 
+        gthread_Thread_join( WorkerPool[i], 0 ); // Join and destroy
     }
+
+    // SuccSessFullY JoineD All ThreadS
+    printf("\n[ ALL THREADS JOINED SUCCESSFULLY ]\n"); 
 
     // Perform cleanup.
 

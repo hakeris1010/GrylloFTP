@@ -19,11 +19,12 @@
     #include <signal.h>
     #include <pthread.h>
 
-    // Set the Error if some headers are unavailable
+    // TODO: Set the Error if some headers are unavailable
+    // NOt really working.
 	#ifdef SYS_gettid
-		pid_t tid = syscall(SYS_gettid);
+		//pid_t tid = syscall(SYS_gettid);
 	#else
-		#error "SYS_gettid unavailable on this system"
+		//#error "SYS_gettid unavailable on this system"
 	#endif 
 
 #endif
@@ -137,7 +138,8 @@ void* pThreadProc( void* param )
 
     // Set the thread-specific variables, with thread-safety.
     gthread_Mutex_lock( attrs->threadInfo->flagtex );
-    attrs->threadInfo->threadID = (long)gettid();
+    // TODO: Now substiture GetTid() wiith GetPid, because the gettid() is not available in most systems.
+    attrs->threadInfo->threadID = (long)/*gettid()*/ getpid();
 
     gthread_Mutex_unlock( attrs->threadInfo->flagtex );
 
@@ -209,6 +211,7 @@ GrThread gthread_Thread_create(void (*proc)(void*), void* param)
 void gthread_Thread_destroy(GrThread hnd)
 {
     struct ThreadHandlePriv* pv = (struct ThreadHandlePriv*)hnd;
+    hlogf("gthread Thread_destroy: thread addr: %p.\nLock mutex...", pv);
     gthread_Mutex_lock( pv->flagtex );
 
     // If thread hasn't been joined (is still active) and hasn't been detached, terminate.
@@ -223,6 +226,7 @@ void gthread_Thread_destroy(GrThread hnd)
     #endif
 
     // Unlock and Destroy that mutex.
+    hlogf("gthread Thread_destroy: Success. Unlocking and destroying mutex...\n");
     gthread_Mutex_unlock( pv->flagtex );
     gthread_Mutex_destroy( &(pv->flagtex) );
 
@@ -233,6 +237,7 @@ void gthread_Thread_destroy(GrThread hnd)
 void gthread_Thread_join(GrThread hnd, char destroy)
 {
     struct ThreadHandlePriv* pv = (struct ThreadHandlePriv*)hnd;
+    hlogf("gthread Thread_join: Joining thread %p.\nLock mutex...\n", pv);
     gthread_Mutex_lock( pv->flagtex );
     
     // Here we assume that thread is joinable and don't check.
@@ -242,12 +247,14 @@ void gthread_Thread_join(GrThread hnd, char destroy)
     #elif defined _GRYLTOOL_POSIX
         int res = pthread_join( pv->tid , NULL );
         if( res != 0 )
-            hlogf("gthread: ERROR on pthread_join() : %s\n", strerror(res));
+            hlogf("gthread Thread_join: ERROR on pthread_join() : %s\n", strerror(res));
     #endif
 
     // Unlock the mutex, and call destroy() if specified.
+    hlogf("gthread Thread_join: Unlock mutex...\n");
     gthread_Mutex_unlock( pv->flagtex );
 
+    hlogf("gthread Thread_join: Returning.\n\n");
     if(destroy)
         gthread_Thread_destroy( hnd );
 }
@@ -392,7 +399,8 @@ long gthread_Thread_getID(GrThread hnd)
     #elif defined _GRYLTOOL_POSIX
         if(hnd) 
             return (long)( ((struct ThreadHandlePriv*)hnd)->threadID );
-        return (long) gettid(); // This actually returns a TID.
+        // TODO: getTid() -- not really available in some systems.
+        return (long) /*gettid()*/ getpid(); // This actually returns a TID.
     #endif
     return 0;
 }
