@@ -107,6 +107,7 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
     fd_set writeSet;
     int iRes = 0;
     int lastRespCode = 0;
+    int maxFds; // Linux-only argument to the "select()", the highest value of the FD's in sets + 1.
     //Set the timeout
     struct timeval tv;
 
@@ -121,14 +122,16 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
 
         FD_ZERO(&writeSet);
         FD_SET(sock, &writeSet);
+        // Reserve the max-numbered SockFD for Loonix
+        maxFds = (int)sock + 1;
 
-        iRes = select(0, NULL, &writeSet, NULL, &tv);
+        iRes = select(maxFds, NULL, &writeSet, NULL, &tv);
         if(iRes == SOCKET_ERROR){
             hlogf("SELECT returned error when SENDing.\n\n");
             return -1;
         }
         else if(iRes == 0){
-            hlogf("Its's unavailable to send data on this socket!\n\n");
+            hlogf("Timeout: Its's unavailable to send data on this socket!\n\n");
             return 0;
         }
 
@@ -157,7 +160,10 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
             FD_ZERO(&readSet);
             FD_SET(sock, &readSet); // Add this socket to a set of socks checked for readability
 
-            iRes = select(0, &readSet, NULL, NULL, &tv); // Return - no.of socks available for reading/writing.
+            // Reserve the max-numbered SockFD for Loonix
+            maxFds = (int)sock + 1;
+
+            iRes = select(maxFds, &readSet, NULL, NULL, &tv); // Return - no.of socks available for reading/writing.
             if(iRes == SOCKET_ERROR){
                 hlogf("SELECT returned error.\n\n");
                 return -1;
