@@ -4,7 +4,7 @@
 /************************************************************  
  *         GrylloThreads C-Multithreading Framework         *
  *                ~ ~ ~ By GrylloTron ~ ~ ~                 *
- *                      Version 0.2.1                       *
+ *                       Version 0.3                        *
  *        -  -  -  -  -  -  -  -  -  -  -  -  -  -  -       *      
  *                                                          *
  *  Features:                                               *
@@ -18,14 +18,13 @@
  *  TODOS:
  *  - Process management API (Partly implemented).
  *  - Maybe split SharedMutex and SimpleMutex
- *  - Recheck the concurrency in Process API and mutex API
  *  
  *  BUGS:
- *  - Must check bugs on POSIX.                             
+ *  - Currently no spotted, but must check more on POSIX.
  *                                                          *
  ***********************************************************/ 
 
-#define GTHREAD_VERSION "v0.2.1"
+#define GTHREAD_VERSION "v0.3"
 
 /*! The typedef'd primitives
  *  Implementation is defined in their respective source files.

@@ -211,7 +211,7 @@ int main(int argc, char** argv)
     // Join all threads safely after thay finish their work.
     for(int i=0; i < WorkerThreadCount; i++) {
         printf("[ Joining thread no %d ]\n", i); 
-        gthread_Thread_join( WorkerPool[i], 0 ); // Join and destroy
+        gthread_Thread_join( WorkerPool[i], 1 ); // Join and destroy
     }
 
     // SuccSessFullY JoineD All ThreadS

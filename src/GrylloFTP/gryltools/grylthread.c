@@ -121,7 +121,9 @@ void pEndFlagSetProc( void* param )
 
     // Set the flag to InActive, protected by Mutex.
     gthread_Mutex_lock( attrs->threadInfo->flagtex );
+
     (attrs->threadInfo->flags) &= ~GRYLTHREAD_FLAG_ACTIVE;
+
     gthread_Mutex_unlock( attrs->threadInfo->flagtex );
 
     // It's curren't thread's responsibility to free the memory used by ThreadFuncAttribs parameter.
@@ -238,21 +240,23 @@ void gthread_Thread_join(GrThread hnd, char destroy)
 {
     struct ThreadHandlePriv* pv = (struct ThreadHandlePriv*)hnd;
     hlogf("gthread Thread_join: Joining thread %p.\nLock mutex...\n", pv);
-    gthread_Mutex_lock( pv->flagtex );
     
     // Here we assume that thread is joinable and don't check.
     // It's programmer's responsibility to keep track of which threads are joinable, after all.
     #if defined _GRYLTOOL_WIN32
         WaitForSingleObject( pv->hThread, INFINITE );
+
     #elif defined _GRYLTOOL_POSIX
+        hlogf("gthread Thread_join: calling pthread_join.\n");
+        // We must unlock the mutex here because if we own the lock, and
+        // target thread is still running, then deadlock would occur 
+        // when the target executes a cleanup handler on termination, 
+        // locking the mutex before clearing the ACTIVE flag.
+        // UPDATE: But we don't even need locking on this function because we don't modify any flags.
         int res = pthread_join( pv->tid , NULL );
         if( res != 0 )
             hlogf("gthread Thread_join: ERROR on pthread_join() : %s\n", strerror(res));
     #endif
-
-    // Unlock the mutex, and call destroy() if specified.
-    hlogf("gthread Thread_join: Unlock mutex...\n");
-    gthread_Mutex_unlock( pv->flagtex );
 
     hlogf("gthread Thread_join: Returning.\n\n");
     if(destroy)
@@ -353,7 +357,10 @@ static void gthread_Thread_terminate_priv( struct ThreadHandlePriv* pv )
         // TODO: We should probably use pthread_kill(), after installing signal handler on the specified thread.
         // It is known that pthread_cancel() terminates thread only after thread calls a SysCall which is a
         // Cancellation Point. This should not work immediatly.
+        // Lock is acquired. So we must unlock to prevent deadlock in Cleanup Handlor
+        gthread_Mutex_unlock( pv->flagtex );
         pthread_cancel( pv->tid );
+        gthread_Mutex_lock( pv->flagtex );
 
         // After Cancellation we could join. Wait until the thread closes itself (it's optional).
     #endif
