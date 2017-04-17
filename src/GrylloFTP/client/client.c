@@ -65,8 +65,15 @@ const struct FTPClientUICommand ftpClientCommands[]=
 // MultiThreading Synchronization Primitives.
 // Here we use a Mutex and a Condition Variable to wait for specific events.
 
+// - We need this pair of Mutex/CondVar to check the state of pending STDOUT 
+// writing operations by other threads. 
+// - Specifically, in the Main (command input) thread we must know that the
+// data threads completed their output operations to the STDOUT, before 
+// calling function reading (User Input) from STDIN.
+
 GrMutex mutex_WaitPrintData;
 GrCondVar condvar_WaitPrintData;
+volatile int PrintingThreadCount = 0;
 
 /*! Default ClientState value setter.
  */
@@ -279,6 +286,30 @@ void ftpPrintHelp(FILE* outf)
     fprintf(outf, "\n");
 }
 
+/* DataThread Helpers
+ *  This function frees the FormatInfo structure memory and decrements WriteCounter if needed.
+ */  
+void ftpThreadRunner_priv_ErrorCleanup(FTPDataFormatInfo* fmInfo, char unlockMtx)
+{
+    if(unlockMtx || (fmInfo ? fmInfo->outFile == stdout : 0)){
+        // As the writing is done, decrement the Actively Writing counter,
+        // and notify all waiting threads to wake up and check.
+        hlogf("\nDataThread_cleanup: Identified Mutex Unlock/CondVar Notify.");
+
+        gthread_Mutex_lock( mutex_WaitPrintData );
+
+        if(PrintingThreadCount > 0)
+            PrintingThreadCount--;
+        gthread_CondVar_notifyAll( condvar_WaitPrintData );
+
+        gthread_Mutex_unlock( mutex_WaitPrintData );
+    }
+    if(fmInfo){
+        hlogf("Freeing formInfo.\n");
+        FTP_freeDataFormInfo(fmInfo);
+        free(fmInfo);
+    }
+}
 
 /*! The Data-connection thread procedures.
  *  Thread makes a Data connection to server and executes the transfer by the
@@ -300,7 +331,7 @@ void ftpThreadRunner_receive(void* param)
         
     if(!formInfo->passiveOn){
         hlogf("Active mode is not supported. Aborting.\n");
-        FTP_freeDataFormInfo(formInfo);
+        ftpThreadRunner_priv_ErrorCleanup( formInfo, 0 ); 
         return;
     }
 
@@ -309,52 +340,46 @@ void ftpThreadRunner_receive(void* param)
 
     if(!formInfo->outFile && !formInfo->fname){
         hlogf("NO file and filename specified. Aborting data transfer.\n");
-        FTP_freeDataFormInfo(formInfo);
+        ftpThreadRunner_priv_ErrorCleanup( formInfo, 0 ); 
         return;
     }
-    
-    //return; //DEBUG
 
     // Connect to the server on specified sock and port.
     SOCKET dataSocket = gsockConnectSocket(formInfo->ipAddr, port, 0, 0, 0, 0);
     if(dataSocket == INVALID_SOCKET){
         hlogf("Can't connect to the server on Data Port! Aborting...\n");
-        FTP_freeDataFormInfo(formInfo);
+        ftpThreadRunner_priv_ErrorCleanup( formInfo, 0 ); 
         return;
     }
     printf("Successfully connected. Creating a File: %s\n", formInfo->fname);
     
-    if(formInfo->fname && !formInfo->outFile){
+    // If Filename has been specified, and no FILE* has been given, it means we
+    // must Open the specified file for Writing by ourselves.
+    if(formInfo->fname && !formInfo->outFile){ 
         if(! (formInfo->outFile = fopen(formInfo->fname, "wb"))){
             hlogf("Can't open file: %s\nAborting...\n", formInfo->fname);
             gsockCloseSocket(dataSocket);
-            FTP_freeDataFormInfo(formInfo);
+            ftpThreadRunner_priv_ErrorCleanup( formInfo, 0 ); 
             return;
         }
     }
 
     // Allocate the buffer to which we'll receive
     char dataBuffer[GSOCK_DEFAULT_BUFLEN];
-
-    //hlogf("Testing ouput file.\n");
-    //fprintf(formInfo->outFile, "Testing.\n");
-
-    // Execute the receiving and writing into buff. Specify that No sending should be done, only receiving.
+    
+    // Execute the receiving and writing into buff. 
+    // Specify that No sending and no socket flushing should be done, only receiving.
     hlogf("Starting the receiving procedure.....\n");
     if( sendMessageGetResponse_Extended( dataSocket, dataBuffer, dataBuffer, sizeof(dataBuffer),
-                FTOOL_RECVRESP_NOSEND, printBuffer, (void*)(formInfo->outFile), 
-                FTOOL_RECVRESP_DEFAULT_TIMEOUT_SECS, FTOOL_RECVRESP_DEFAULT_TIMEOUT_MICROS ) < 0 ){ 
+                FTOOL_RECVRESP_NOSEND | FTOOL_RECVRESP_NO_BUFFERFLUSH, 
+                printBuffer, (void*)(formInfo->outFile), 
+                1, 0 ) < 0 ){ // For DataConn, use a safer timeout of 1 second.
          hlogf("FIN or error while sending and receiving.\n");
     }
-    
+
     // Cleanup. Close files, sockets, and free structures.
     gsockCloseSocket(dataSocket);
-
-    //fclose(formInfo->outFile);
-
-    hlogf("Freeing formInfo.\n");
-    FTP_freeDataFormInfo(formInfo);
-    free(formInfo);
+    ftpThreadRunner_priv_ErrorCleanup( formInfo, 0 ); 
 
     hlogf("ftpThreadRunner_receive(): end\n* - * - * - * - * - * - *\n");
 }
@@ -685,6 +710,21 @@ int ftpDataConComProc(struct FTPCallbackCommand command, FTPClientState* state)
     }
 
     // At this point everything is configured.
+    
+    // If the following Data Thread operation will require Writing to STDOUT (e.g. dir command),
+    // Signal that important writing to STDOUT is taking place, so no input should be done
+    // (Increment the Actively Writing Thread Counter). We must lock a mutex to do it.
+    if(formInfo->outFile == stdout ){
+        hlogf("STDOUT-using Data Connection command identified. Locking mutex, and setting PrintingThreadCount.\n");
+        gthread_Mutex_lock( mutex_WaitPrintData );
+
+        PrintingThreadCount++;
+
+        gthread_Mutex_unlock( mutex_WaitPrintData );
+    }
+    // On data thread the PrintingThreadCount must be decremented after operation is done!!!
+
+    // Now we can find a position for the thread.
 
     hlogf("Spawning a Data Connection Thread!\n");
     int threadError = 0;
@@ -961,6 +1001,7 @@ int main(int argc, char **argv)
 
     // The state structure
     FTPClientState ftpCliState = {0};
+
     //FTP_setDefaultClientState( &ftpCliState );
     ftpCliState.controlSocket.sock = ControlSocket;
 
@@ -973,6 +1014,20 @@ int main(int argc, char **argv)
         printf("Starting loop...\n");
         while(1)
         {
+            hlogf("Attempting new command input. Checking if active STDOUT operations are present...\n");
+
+            // Check if other threads are currently printing to stdout, if not, then input user command.
+            // If busy, then Wait using Condition Variable
+            gthread_Mutex_lock( mutex_WaitPrintData );
+            while( PrintingThreadCount > 0 ){ // There are printing threads.
+                // Release the lock and enter sleep state atomically, until Notified.  
+                hlogf("\n[MAIN THREAD]: Writing operations are pending! Entering Wait State on CondVar...\n");
+                gthread_CondVar_wait(condvar_WaitPrintData, mutex_WaitPrintData); 
+            }
+            gthread_Mutex_unlock( mutex_WaitPrintData );
+
+            // At this point no active writing operations are being done by other threads.
+
             gmisc_GetLine("\nftp> ", recvbuf, recvbuflen, stdin);
 
             if( executeCommand(ControlSocket, recvbuf, recvbuflen, &ftpCliState) < 0 ) // Error or need to quit.
@@ -983,6 +1038,9 @@ int main(int argc, char **argv)
 
     // Execute QUIT command - safely terminate an FTP session.
     sendMessageGetResponse(ControlSocket, "QUIT\r\n", recvbuf, recvbuflen, 1);
+
+    // Join all active threads in the pool
+    //for(FTPDataThread* th = 
 
     // cleanup. close the socket, and terminate the Winsock.dll instance bound to our app.
     gsockCloseSocket(ControlSocket);
