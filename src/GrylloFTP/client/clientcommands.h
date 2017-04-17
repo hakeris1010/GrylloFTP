@@ -5,7 +5,7 @@
  *
  */
 
-#include <gsrvsocks.h> 
+#include <grylsocks.h> 
 #include "../gftp/gftp.h"
 
 #define FTPUI_COMFLAG_COMPLEX       1

@@ -1,13 +1,18 @@
-#ifndef GSRV_H_DEFINED
-#define GSRV_H_DEFINED
+#ifndef GRYLSOCKS_H_DEFINED
+#define GRYLSOCKS_H_DEFINED
 
-// ======== Socket headers - OS dependent. ======== //
-#if defined __WIN32
+// The header which defines system.
+#include "systemcheck.h"
+
+/* ======== Socket headers - OS dependent. ======== //
+ *  Included here, to allow user to use Native Socket API alongside with GrylSocks.
+ */ 
+#if defined _GRYLTOOL_WIN32
     #include <winsock2.h>
-    #include <windows.h>
     #include <ws2tcpip.h>
+    #include <windows.h>
 
-#elif defined __linux__
+#elif defined _GRYLTOOL_POSIX
     #include <unistd.h>
     #include <arpa/inet.h>  //close
     #include <sys/types.h>
@@ -44,8 +49,8 @@ int gsockErrorCleanup(SOCKET sock, struct addrinfo* addrin, const char* msg, cha
 int gsockCloseSocket(SOCKET sock);
 void gsockSockCleanup();
 
-SOCKET gsockConnectSocket(const char* addr, const char* port, int socktype, int protocol);
-SOCKET gsockListenSocket(const char* port, int family, int socktype, int protocol);
+SOCKET gsockConnectSocket(const char* address, const char* port, int family, int socktype, int protocol, int flags);
+SOCKET gsockListenSocket(int port, const char* localBindAddr, int family, int socktype, int protocol, int flags);
 
 int gsockReceive(SOCKET sock, char* buff, size_t bufsize, int flags);
 int gsockSend(SOCKET sock, const char* buff, size_t bufsize, int flags); 

@@ -28,7 +28,7 @@
 #include <stdio.h>
 #include <libgen.h>
 #include <gmisc.h>
-#include <gsrvsocks.h>
+#include <grylsocks.h>
 #include <grylthread.h>
 #include <hlog.h>
 #include "clientcommands.h"
@@ -62,6 +62,12 @@ const struct FTPClientUICommand ftpClientCommands[]=
     { 4, "passive",   0, ftpParamComProc}
 };
 
+// MultiThreading Synchronization Primitives.
+// Here we use a Mutex and a Condition Variable to wait for specific events.
+
+GrMutex mutex_WaitPrintData;
+GrCondVar condvar_WaitPrintData;
+
 /*! Default ClientState value setter.
  */
 void FTP_setDefaultClientState(FTPClientState* state)
@@ -85,6 +91,13 @@ void printBuffer(char* buff, size_t sz, void* param)
     fwrite( buff, 1, sz, (param ? (FILE*)param : stdout));
 }
 
+/*! Helper for sendMessageGetResponse_Extended()
+ *  A Select-based sender/receiver
+ *  Args:
+ *  - The same as for the main func.
+ */
+
+int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz, int flags);
 
 /*! FTP request-response handler.
  *  Sends a client request, and returns server response.
@@ -96,12 +109,22 @@ void printBuffer(char* buff, size_t sz, void* param)
  *  - Fatal technical err: <0 (Need to exit a program)
  *  - If >0, then server response code.
  */
-#define FTOOL_RECVRESP_PRINTBUFFER  1
-#define FTOOL_RECVRESP_NOSEND       2
-#define FTOOL_RECVRESP_NORECEIVE    4
 
-int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz, 
-                        char flags, void (*responseBufferCallback)(char*, size_t, void*), void* callbackParam)
+// Flags and defines
+// Set the default timeout 
+#define FTOOL_RECVRESP_DEFAULT_TIMEOUT_SECS   0      
+#define FTOOL_RECVRESP_DEFAULT_TIMEOUT_MICROS 500000
+
+#define FTOOL_RECVRESP_PRINTBUFFER      (1 << 0) // 1
+#define FTOOL_RECVRESP_NOSEND           (1 << 1) // 2
+#define FTOOL_RECVRESP_NORECEIVE        (1 << 2) // 4
+#define FTOOL_RECVRESP_NO_BUFFERFLUSH   (1 << 3) // 8
+#define FTOOL_RECVRESP_PRINTFLUSH       (1 << 4) // 16
+#define FTOOL_RECVRESP_FLUSH_ONLY       (1 << 5) // 32
+
+int sendMessageGetResponse_Extended( SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz, 
+                        int flags, void (*responseBufferCallback)(char*, size_t, void*), void* callbackParam,
+                        int selectWaitTime_secs, int selectWaitTime_microsecs )
 {
     fd_set readSet;
     fd_set writeSet;
@@ -113,12 +136,31 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
 
     hlogf("\nsendMessageGetResponse(): start\n");
 
-    if(! (flags & FTOOL_RECVRESP_NOSEND))
+    // If flush socket is specified, then receive the pending data until empty. 
+    // When no data is pending (socket flushed), send the data.
+    // Flush is enabled by default, it can be disabled by flag NO_BUFFERFLUSH.
+    if(! (flags & FTOOL_RECVRESP_NO_BUFFERFLUSH))
+    {
+        hlogf("Flush flag set. Executing the recursion with NO_BUFFERFLUSH...\n");
+        char flushbuff[1024]; // 1KB temp. buffer for flushing
+
+        // Specify that only receiving should be done, and the print flag. 
+        sendMessageGetResponse_Extended( sock, NULL, flushbuff, sizeof(flushbuff), 
+                FTOOL_RECVRESP_NOSEND | FTOOL_RECVRESP_NO_BUFFERFLUSH | \
+                ((flags & FTOOL_RECVRESP_PRINTFLUSH) ? FTOOL_RECVRESP_PRINTBUFFER : 0),
+                responseBufferCallback, callbackParam, 0, 5000 ); 
+
+        if(flags & FTOOL_RECVRESP_FLUSH_ONLY)
+            return 0;
+    }
+
+    if(!(flags & FTOOL_RECVRESP_NOSEND) && command)
     {
         hlogf("Send flag is set. Data to send:\n%s\nChecking FD's for sending.\n", command);
 
-        tv.tv_sec = 1; // Wait 1 second until it's possible to send
-        tv.tv_usec = 0;
+        // Wait time until it's possible to send 
+        tv.tv_sec = selectWaitTime_secs;        // Seconds 
+        tv.tv_usec = selectWaitTime_microsecs;  // MicroSeconds
 
         FD_ZERO(&writeSet);
         FD_SET(sock, &writeSet);
@@ -148,14 +190,14 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
         }
     }
 
-    if(! (flags & FTOOL_RECVRESP_NORECEIVE))
+    if(!(flags & FTOOL_RECVRESP_NORECEIVE) && respondbuf && respbufsiz>0)
     {
         hlogf("Receive flag is set. Checking FD's for receiving.\n");
 
         // Now receive the Response
         while(1){
-            tv.tv_sec = 1; // Wait 1 second until request arrives
-            tv.tv_usec = 0;
+            tv.tv_sec = selectWaitTime_secs;     
+            tv.tv_usec = selectWaitTime_microsecs;
 
             FD_ZERO(&readSet);
             FD_SET(sock, &readSet); // Add this socket to a set of socks checked for readability
@@ -198,8 +240,9 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
                     responseBufferCallback( respondbuf, iRes, callbackParam );
 
                 // Return the response code as int.
-                lastRespCode = ( (respondbuf[0]-'0')*100 + (respondbuf[1]-'0')*10 + (respondbuf[2]-'0') );
-                lastRespCode = (lastRespCode<0 ? 0 : lastRespCode);
+                //lastRespCode = ( (respondbuf[0]-'0')*100 + (respondbuf[1]-'0')*10 + (respondbuf[2]-'0') );
+                //lastRespCode = (lastRespCode<0 ? 0 : lastRespCode);
+                lastRespCode = 0; // Good.
             }
         }
     }
@@ -207,12 +250,14 @@ int sendMessageGetResponse_Extended(SOCKET sock, const char* command, char* resp
     return lastRespCode;
 }
 
-int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz, char flags)
+int sendMessageGetResponse(SOCKET sock, const char* command, char* respondbuf, size_t respbufsiz, int flags)
 {
     if(flags & FTOOL_RECVRESP_PRINTBUFFER)
         printf("\n");
 
-    int retval = sendMessageGetResponse_Extended(sock, command, respondbuf, respbufsiz, flags, NULL, NULL);
+    // Execute a function simply: No CallBacks, and 1 second timeout.
+    int retval = sendMessageGetResponse_Extended(sock, command, respondbuf, respbufsiz, flags, 
+             NULL, NULL, FTOOL_RECVRESP_DEFAULT_TIMEOUT_SECS, FTOOL_RECVRESP_DEFAULT_TIMEOUT_MICROS );
     
     if(flags & FTOOL_RECVRESP_PRINTBUFFER)
         printf("\n");
@@ -271,7 +316,7 @@ void ftpThreadRunner_receive(void* param)
     //return; //DEBUG
 
     // Connect to the server on specified sock and port.
-    SOCKET dataSocket = gsockConnectSocket(formInfo->ipAddr, port, SOCK_STREAM, IPPROTO_TCP);
+    SOCKET dataSocket = gsockConnectSocket(formInfo->ipAddr, port, 0, 0, 0, 0);
     if(dataSocket == INVALID_SOCKET){
         hlogf("Can't connect to the server on Data Port! Aborting...\n");
         FTP_freeDataFormInfo(formInfo);
@@ -296,8 +341,9 @@ void ftpThreadRunner_receive(void* param)
 
     // Execute the receiving and writing into buff. Specify that No sending should be done, only receiving.
     hlogf("Starting the receiving procedure.....\n");
-    if( sendMessageGetResponse_Extended(dataSocket, dataBuffer, dataBuffer, sizeof(dataBuffer),
-             FTOOL_RECVRESP_NOSEND, printBuffer, (void*)(formInfo->outFile) ) < 0 ){ 
+    if( sendMessageGetResponse_Extended( dataSocket, dataBuffer, dataBuffer, sizeof(dataBuffer),
+                FTOOL_RECVRESP_NOSEND, printBuffer, (void*)(formInfo->outFile), 
+                FTOOL_RECVRESP_DEFAULT_TIMEOUT_SECS, FTOOL_RECVRESP_DEFAULT_TIMEOUT_MICROS ) < 0 ){ 
          hlogf("FIN or error while sending and receiving.\n");
     }
     
@@ -848,6 +894,7 @@ int executeCommand(SOCKET sock, char* command, size_t comBufLen, FTPClientState*
 
 int main(int argc, char **argv)
 {
+
     SOCKET ControlSocket = INVALID_SOCKET;
 
     struct addrinfo *result = NULL,
@@ -875,6 +922,18 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    //-------- Initialize Multithreading Mutexes ---------//
+    
+    hlogf("Init Mutexes and CondVars...\n");
+
+    mutex_WaitPrintData = gthread_Mutex_init(0);
+    condvar_WaitPrintData = gthread_CondVar_init();
+
+    if(!mutex_WaitPrintData || !condvar_WaitPrintData){
+        printf("Failed to init Mutexes!\n");
+        return -1;
+    }
+
     //--------------- Connect to a SeRVeR ----------------//
 
     printf("Will connect to a server \"%s\" on port %s\n\nInit WinSock...", argv[1], argv[2]);
@@ -883,14 +942,20 @@ int main(int argc, char **argv)
     iResult = gsockInitSocks();
     if (iResult != 0) {
         printf("gsockInitSocks() failed with error: %d\n", iResult);
+        gthread_Mutex_destroy(&mutex_WaitPrintData);
+        gthread_CondVar_destroy(&condvar_WaitPrintData);
         return 1;
     }
 
     printf("Done.\nNow trying to connect.\n");
 
-    ControlSocket = gsockConnectSocket(argv[1], argv[2], SOCK_STREAM, IPPROTO_TCP);
-    if(ControlSocket == INVALID_SOCKET)
-        return gsockErrorCleanup(0, NULL, "Can't connect to a madafakkin' server....", 1, 1);
+    ControlSocket = gsockConnectSocket(argv[1], argv[2], 0, 0, 0, 0);
+    if(ControlSocket == INVALID_SOCKET){
+        printf("ERROR: Can't connect to a server.\n");
+        gthread_Mutex_destroy(&mutex_WaitPrintData);
+        gthread_CondVar_destroy(&condvar_WaitPrintData);
+        return gsockErrorCleanup(0, NULL, "Can't connect to a server....", 1, 1);
+    }
 
     //---------------   Start a SessioN  ----------------//
 
@@ -922,6 +987,9 @@ int main(int argc, char **argv)
     // cleanup. close the socket, and terminate the Winsock.dll instance bound to our app.
     gsockCloseSocket(ControlSocket);
     gsockSockCleanup();
+
+    gthread_Mutex_destroy(&mutex_WaitPrintData);
+    gthread_CondVar_destroy(&condvar_WaitPrintData);
 
     return 0;
 }

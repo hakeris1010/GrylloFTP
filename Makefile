@@ -35,14 +35,15 @@ SOURCES_CLIENT= src/GrylloFTP/client/client.c \
 LIBS_CLIENT= $(GRYLTOOLS_LIB)
 
 SOURCES_GRYLTOOLS = src/GrylloFTP/gryltools/grylthread.c \
-                    src/GrylloFTP/gryltools/gsrvsocks.c \
+                    src/GrylloFTP/gryltools/grylsocks.c \
                     src/GrylloFTP/gryltools/hlog.c \
                     src/GrylloFTP/gryltools/gmisc.c
 
 HEADERS_GRYLTOOLS=  src/GrylloFTP/gryltools/grylthread.h \
-                    src/GrylloFTP/gryltools/gsrvsocks.h \
+                    src/GrylloFTP/gryltools/grylsocks.h \
                     src/GrylloFTP/gryltools/hlog.h \
-                    src/GrylloFTP/gryltools/gmisc.h
+                    src/GrylloFTP/gryltools/gmisc.h \
+                    src/GrylloFTP/gryltools/systemcheck.h
 LIBS_GRYLTOOLS=
 
 #--------- Test sources ---------#
@@ -73,10 +74,10 @@ endif
 #====================================#
 
 #====================================#
-#$(addprefix $(INCLUDEDIR)/gryltools/, $(notdir HEADERS_GRYLTOOLS))    
-
-GRYLTOOLS_HEAD= $(INCLUDEDIR)/gryltools/
+GRYLTOOLS_INCL= $(INCLUDEDIR)/gryltools/
 GRYLTOOLS_LIB= $(LIBDIR)/gryltools.a
+
+GRYLTOOLS_INCLHEAD= #$(addprefix $(GRYLTOOLS_INCL), $(notdir HEADERS_GRYLTOOLS))    
 
 SERVNAME= server
 CLINAME= client
@@ -85,7 +86,7 @@ GRYLTOOLS= gryltools
 #====================================#
 
 DEBUG_INCLUDES= -Isrc/GrylloFTP/gryltools
-RELEASE_INCLUDES= -I$(GRYLTOOLS_HEAD)
+RELEASE_INCLUDES= -I$(GRYLTOOLS_INCL)
 
 BINPREFIX= 
 
@@ -107,16 +108,16 @@ release: relops $(GRYLTOOLS) $(CLINAME) $(TESTNAME)
 .c.o:
 	$(CC) $(CFLAGS) -c $*.c -o $*.o
 
-$(GRYLTOOLS_HEAD): $(HEADERS_GRYLTOOLS)
-	mkdir -p $@    
+gryltools_incl: $(HEADERS_GRYLTOOLS)
+	mkdir -p $(GRYLTOOLS_INCL)    
 	for file in $^ ; do \
-    	cp $$file $@ ; \
+		cp $$file $(GRYLTOOLS_INCL) ; \
 	done
 
 $(GRYLTOOLS_LIB): $(SOURCES_GRYLTOOLS:.c=.o) $(LIBS_GRYLTOOLS)
 	$(AR) -rvsc $@ $^ 
 
-$(GRYLTOOLS): $(GRYLTOOLS_LIB) $(GRYLTOOLS_HEAD)    
+$(GRYLTOOLS): $(GRYLTOOLS_LIB) gryltools_incl    
 $(GRYLTOOLS)_debug: debops $(GRYLTOOLS)
 
 $(SERVNAME): $(SOURCES_SERVER:.c=.o) $(LIBS_SERVER)
